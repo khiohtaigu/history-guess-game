@@ -1,107 +1,143 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebaseConfig';
-import { ref, set, onValue, update, push } from "firebase/database";
+import { ref, set, onValue, update, get } from "firebase/database";
 
-const ROOM_ID = "ROOM_001"; // 之後可擴充為動態代碼
-const GAME_TIME = 180; // 遊戲時間（秒）
+const ROOM_ID = "ROOM_001"; // 建議之後可改為讓使用者輸入
+const GAME_TIME = 180; 
 
 export default function App() {
-  const [role, setRole] = useState(null); // 'projector' or 'player'
-  const [gameState, setGameState] = useState('LOBBY'); // LOBBY, STARTING, PLAYING, ENDED
-  const [currentQ, setCurrentQ] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(GAME_TIME);
-  const [score, setScore] = useState(0);
-  const [history, setHistory] = useState([]); // 紀錄對錯
+  const [role, setRole] = useState(null); 
+  const [roomData, setRoomData] = useState(null);
 
-  // 1. 監聽 Firebase 房間狀態
+  // 1. 全域監聽房間資料
   useEffect(() => {
     const roomRef = ref(db, `rooms/${ROOM_ID}`);
     return onValue(roomRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setGameState(data.state || 'LOBBY');
-        setCurrentQ(data.currentQuestion);
-        setTimeLeft(data.timeLeft);
-        setScore(data.score || 0);
-        setHistory(data.history || []);
-      }
+      if (snapshot.exists()) setRoomData(snapshot.val());
     });
   }, []);
 
-  // 2. 主流程控制：建立遊戲
-  const createGame = async () => {
-    // 從資料庫隨機抓一題
-    onValue(ref(db, 'question_pool'), (snapshot) => {
-      const pool = snapshot.val();
-      if (!pool) return alert("請先匯入題庫！");
-      const randomQ = pool[Math.floor(Math.random() * pool.length)];
-      
-      update(ref(db, `rooms/${ROOM_ID}`), {
-        state: 'PLAYING',
-        currentQuestion: randomQ,
-        timeLeft: GAME_TIME,
-        score: 0,
-        history: [],
-        lastActionTime: Date.now()
-      });
-    }, { onlyOnce: true });
+  // 2. 遊戲初始化邏輯 (洗牌題庫)
+  const startGame = async () => {
+    const snapshot = await get(ref(db, 'question_pool'));
+    if (!snapshot.exists()) return alert("請先在後台匯入題庫！");
+    
+    // 取得所有題目並隨機洗牌
+    let pool = Object.values(snapshot.val());
+    const shuffled = pool.sort(() => Math.random() - 0.5);
+
+    await update(ref(db, `rooms/${ROOM_ID}`), {
+      state: 'PLAYING',
+      queue: shuffled,
+      currentIndex: 0,
+      score: 0,
+      history: [],
+      timeLeft: GAME_TIME,
+      startTime: Date.now()
+    });
   };
 
-  // 渲染不同角色畫面
   if (!role) {
     return (
       <div style={layoutStyle}>
-        <h1>台灣史「你講我猜」</h1>
-        <button style={bigBtn} onClick={() => setRole('projector')}>我是投影幕 (電腦)</button>
-        <button style={bigBtn} onClick={() => setRole('player')}>我是猜題者 (手機)</button>
+        <h1 style={{color: '#1890ff'}}>台灣史你講我猜 v2.0</h1>
+        <button style={bigBtn} onClick={() => setRole('projector')}>💻 我是投影幕 (電腦)</button>
+        <button style={bigBtn} onClick={() => setRole('player')}>📱 我是猜題者 (手機)</button>
       </div>
     );
   }
 
   return role === 'projector' ? 
-    <ProjectorView gameState={gameState} currentQ={currentQ} timeLeft={timeLeft} score={score} createGame={createGame} history={history} /> : 
-    <PlayerView gameState={gameState} currentQ={currentQ} roomId={ROOM_ID} />;
+    <ProjectorView roomData={roomData} startGame={startGame} /> : 
+    <PlayerView roomData={roomData} />;
 }
 
 // --- 投影幕組件 ---
-function ProjectorView({ gameState, currentQ, timeLeft, score, createGame, history }) {
+function ProjectorView({ roomData, startGame }) {
   useEffect(() => {
     let timer;
-    if (gameState === 'PLAYING' && timeLeft > 0) {
+    if (roomData?.state === 'PLAYING' && roomData.timeLeft > 0) {
       timer = setInterval(() => {
-        update(ref(db, `rooms/${ROOM_ID}`), { timeLeft: timeLeft - 1 });
+        update(ref(db, `rooms/${ROOM_ID}`), { timeLeft: roomData.timeLeft - 1 });
       }, 1000);
-    } else if (timeLeft === 0 && gameState === 'PLAYING') {
+    } else if (roomData?.timeLeft === 0 && roomData.state === 'PLAYING') {
       update(ref(db, `rooms/${ROOM_ID}`), { state: 'ENDED' });
     }
     return () => clearInterval(timer);
-  }, [gameState, timeLeft]);
+  }, [roomData?.state, roomData?.timeLeft]);
 
-  if (gameState === 'LOBBY') return <div style={layoutStyle}><h1>準備開始遊戲</h1><button style={btnStyle} onClick={createGame}>開始新回合</button></div>;
-  if (gameState === 'ENDED') return (
-    <div style={layoutStyle}>
-      <h1>遊戲結束！得分：{score}</h1>
-      <div style={historyBox}>
-        {history.map((h, i) => <div key={i} style={{color: h.type==='正'?'green':'red'}}>{h.q} ({h.type})</div>)}
+  if (!roomData || roomData.state === 'LOBBY') {
+    return <div style={layoutStyle}><h1>準備開始遊戲</h1><button style={btnStyle} onClick={startGame}>開始新回合</button></div>;
+  }
+
+  if (roomData.state === 'ENDED') {
+    return (
+      <div style={layoutStyle}>
+        <h1>遊戲結束！得分：{roomData.score}</h1>
+        <div style={historyBox}>
+          {roomData.history?.map((h, i) => <div key={i} style={{color: h.type==='正確'?'#28a745':'#dc3545', fontSize: '24px', margin: '5px'}}>● {h.q} ({h.type})</div>)}
+        </div>
+        <button style={btnStyle} onClick={startGame}>再玩一局</button>
       </div>
-      <button style={btnStyle} onClick={createGame}>再玩一局</button>
-    </div>
-  );
+    );
+  }
 
+  const currentQ = roomData.queue[roomData.currentIndex];
   return (
     <div style={{ ...layoutStyle, backgroundColor: '#000', color: '#fff' }}>
-      <div style={{ fontSize: '40px' }}>剩餘時間：{timeLeft}s | 分數：{score}</div>
-      <h1 style={{ fontSize: '150px', margin: '50px 0' }}>{currentQ?.term}</h1>
-      <p style={{ fontSize: '30px', color: '#aaa' }}>章節：{currentQ?.category}</p>
+      <div style={{ fontSize: '40px', position: 'absolute', top: '20px' }}>
+        時間：{roomData.timeLeft}s | 分數：{roomData.score}
+      </div>
+      <h1 style={{ fontSize: '180px', margin: '20px 0' }}>{currentQ?.term}</h1>
+      <p style={{ fontSize: '40px', color: '#888' }}>({currentQ?.category})</p>
     </div>
   );
 }
 
 // --- 手機猜題者組件 ---
-function PlayerView({ gameState, currentQ, roomId }) {
-  const [isLocked, setIsLocked] = useState(false);
+function PlayerView({ roomData }) {
+  const [readyToTrigger, setReadyToTrigger] = useState(true);
+  const [lastBeta, setLastBeta] = useState(0);
 
-  const requestGyro = () => {
+  const handleMotion = (e) => {
+    const beta = e.beta;
+    setLastBeta(beta?.toFixed(0));
+
+    // A. 中立區判斷：只有回到 -20 到 20 度之間，才重啟觸發許可
+    if (Math.abs(beta) < 20) {
+      setReadyToTrigger(true);
+      return;
+    }
+
+    // B. 觸發判斷：必須在許可狀態下
+    if (!readyToTrigger || !roomData || roomData.state !== 'PLAYING') return;
+
+    if (beta > 60) { // 點頭 (螢幕向地)
+      submitAction('正確');
+    } else if (beta < -60) { // 仰頭 (螢幕向天)
+      submitAction('跳過');
+    }
+  };
+
+  const submitAction = async (type) => {
+    setReadyToTrigger(false); // 立即鎖定，直到回到中立區
+    
+    const nextIndex = roomData.currentIndex + 1;
+    const currentQ = roomData.queue[roomData.currentIndex];
+    const newHistory = [...(roomData.history || []), { q: currentQ.term, type: type }];
+    
+    // 如果題目用完了，結束遊戲
+    const nextState = nextIndex >= roomData.queue.length ? 'ENDED' : 'PLAYING';
+
+    await update(ref(db, `rooms/${ROOM_ID}`), {
+      currentIndex: nextIndex,
+      score: type === '正確' ? roomData.score + 1 : roomData.score,
+      history: newHistory,
+      state: nextState
+    });
+  };
+
+  const enableGyro = () => {
     if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().then(s => {
         if (s === 'granted') window.addEventListener('deviceorientation', handleMotion);
@@ -111,56 +147,27 @@ function PlayerView({ gameState, currentQ, roomId }) {
     }
   };
 
-  const handleMotion = (e) => {
-    if (isLocked) return;
-    const b = e.beta;
-    // 判定邏輯：當手機大動作傾斜時 (基於你測得的 0 為中心)
-    if (b > 70 || b < -70) {
-      const actionType = b > 70 ? '正' : '跳'; // 傾斜方向區分正確或跳過
-      triggerNext(actionType);
-    }
-  };
-
-  const triggerNext = (type) => {
-    setIsLocked(true);
-    // 1. 更新分數與歷史紀錄
-    onValue(ref(db, `rooms/${roomId}`), (snapshot) => {
-      const data = snapshot.val();
-      const pool = []; // 這裡需要重新抓題庫，為簡化邏輯先監聽
-      onValue(ref(db, 'question_pool'), (qSnap) => {
-        const questions = qSnap.val();
-        const nextQ = questions[Math.floor(Math.random() * questions.length)];
-        const newHistory = [...(data.history || []), { q: currentQ.term, type: type }];
-        
-        update(ref(db, `rooms/${roomId}`), {
-          currentQuestion: nextQ,
-          score: type === '正' ? (data.score || 0) + 1 : (data.score || 0),
-          history: newHistory
-        });
-      }, { onlyOnce: true });
-    }, { onlyOnce: true });
-
-    setTimeout(() => setIsLocked(false), 1500); // 1.5秒防手震冷卻
-  };
-
-  if (gameState !== 'PLAYING') return <div style={layoutStyle}><h1>等待老師開始...</h1></div>;
+  if (!roomData || roomData.state !== 'PLAYING') {
+    return <div style={layoutStyle}><h2>等待遊戲開始...</h2><button style={btnStyle} onClick={enableGyro}>啟動感應模式</button></div>;
+  }
 
   return (
-    <div style={{ ...layoutStyle, backgroundColor: isLocked ? '#ccc' : '#1890ff', color: '#fff' }}>
-      <button style={bigBtn} onClick={requestGyro}>啟動感應模式</button>
-      <h2>目前題目：{currentQ?.term}</h2>
-      <p>放在額頭：點頭(正確) / 仰頭(跳過)</p>
-      <div style={{marginTop: '20px'}}>
-        <button onClick={() => triggerNext('正')} style={smallBtn}>手動正確</button>
-        <button onClick={() => triggerNext('跳')} style={smallBtn}>手動跳過</button>
+    <div style={{ ...layoutStyle, backgroundColor: readyToTrigger ? '#1890ff' : '#666', color: '#fff' }}>
+      <h1>{roomData.queue[roomData.currentIndex]?.term}</h1>
+      <p style={{marginTop: '40px'}}>{readyToTrigger ? "請把手機橫放在額頭" : "請回正手機..."}</p>
+      <div style={{fontSize: '12px', opacity: 0.5}}>目前角度: {lastBeta}</div>
+      
+      <div style={{marginTop: '50px', display: 'flex', gap: '10px'}}>
+        <button style={smallBtn} onClick={() => submitAction('正確')}>正確</button>
+        <button style={smallBtn} onClick={() => submitAction('跳過')}>跳過</button>
       </div>
     </div>
   );
 }
 
-// --- 樣式 ---
-const layoutStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', textAlign: 'center', padding: '20px' };
-const bigBtn = { padding: '20px 40px', fontSize: '24px', margin: '10px', cursor: 'pointer', borderRadius: '15px', border: 'none', backgroundColor: '#007bff', color: '#fff' };
-const btnStyle = { padding: '15px 30px', fontSize: '20px', cursor: 'pointer' };
-const smallBtn = { padding: '10px 20px', margin: '5px', fontSize: '16px' };
-const historyBox = { maxHeight: '300px', overflowY: 'auto', margin: '20px', padding: '10px', border: '1px solid #ccc' };
+// --- 樣式設定 ---
+const layoutStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', textAlign: 'center', padding: '20px', overflow: 'hidden' };
+const bigBtn = { padding: '20px 40px', fontSize: '24px', margin: '15px', borderRadius: '15px', border: 'none', backgroundColor: '#1890ff', color: '#fff', cursor: 'pointer' };
+const btnStyle = { padding: '15px 40px', fontSize: '20px', borderRadius: '10px', cursor: 'pointer', border: 'none', backgroundColor: '#28a745', color: '#fff' };
+const smallBtn = { padding: '15px 30px', fontSize: '18px', borderRadius: '8px', border: 'none', backgroundColor: 'rgba(255,255,255,0.2)', color: '#fff' };
+const historyBox = { maxHeight: '50vh', overflowY: 'auto', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '10px', width: '80%', color: '#333' };
