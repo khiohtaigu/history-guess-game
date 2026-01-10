@@ -2,215 +2,174 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebaseConfig';
 import { ref, set, onValue, update, get } from "firebase/database";
 
-const ROOM_ID = "ROOM_001";
+const ROOM_ID = "ROOM_001"; 
+const GAME_TIME = 180; 
 
 export default function App() {
   const [role, setRole] = useState(null); 
   const [roomData, setRoomData] = useState(null);
-  const [inputText, setInputText] = useState("");
-  const [gameMode, setGameMode] = useState("simultaneous"); // simultaneous, turn-based
+  const roomDataRef = useRef(null);
 
   useEffect(() => {
-    return onValue(ref(db, `rooms/${ROOM_ID}`), (s) => s.exists() && setRoomData(s.val()));
+    const roomRef = ref(db, `rooms/${ROOM_ID}`);
+    const unsubscribe = onValue(roomRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setRoomData(data);
+        roomDataRef.current = data;
+      } else {
+        set(roomRef, { state: 'LOBBY', score: 0, timeLeft: GAME_TIME });
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
-  // --- 老師邏輯：隨機分組與抽籤 ---
-  const handleCreateTeams = async () => {
-    const names = inputText.split(/[\s,]+/).filter(n => n.trim());
-    if (names.length < 2) return alert("請輸入至少兩個名字");
-
-    const shuffled = names.sort(() => Math.random() - 0.5);
-    const newTeams = {};
-    for (let i = 0; i < shuffled.length; i += 2) {
-      const teamId = `team_${i/2 + 1}`;
-      const members = shuffled.slice(i, i + 2);
-      newTeams[teamId] = {
-        id: teamId,
-        name: `第 ${i/2 + 1} 組`,
-        members: members,
-        guesser: members[0],
-        describer: members[1] || members[0],
-        score: 0,
-        currentIndex: 0,
-        history: [],
-        state: 'IDLE'
-      };
-    }
-
-    await set(ref(db, `rooms/${ROOM_ID}`), {
-      teams: newTeams,
-      state: 'TEAMS_READY',
-      config: { mode: gameMode, timeLimit: 180 },
-      timeLeft: 180
-    });
-  };
-
-  // --- 老師邏輯：啟動遊戲 ---
-  const handleStartMaster = async () => {
+  const startGame = async () => {
     const snapshot = await get(ref(db, 'question_pool'));
-    const pool = Object.values(snapshot.val());
-    
-    if (gameMode === 'simultaneous') {
-      // 同步模式：生成一組共同題庫
-      const commonQueue = pool.sort(() => Math.random() - 0.5);
-      await update(ref(db, `rooms/${ROOM_ID}`), {
-        state: 'PLAYING',
-        commonQueue: commonQueue,
-        timeLeft: 180,
-        startTime: Date.now()
-      });
-    } else {
-      // 輪流模式：僅更改狀態，各組開始時才各自抓題
-      await update(ref(db, `rooms/${ROOM_ID}`), { state: 'PLAYING', timeLeft: 180 });
-    }
+    if (!snapshot.exists()) return alert("請先匯入題庫！");
+    let pool = Object.values(snapshot.val());
+    const shuffled = pool.sort(() => Math.random() - 0.5);
+    await update(ref(db, `rooms/${ROOM_ID}`), {
+      state: 'PLAYING', queue: shuffled, currentIndex: 0,
+      score: 0, history: [], timeLeft: GAME_TIME
+    });
   };
 
   if (!role) {
     return (
       <div style={layoutStyle}>
-        <h1>台灣史「你講我猜」</h1>
-        <button style={bigBtn} onClick={() => setRole('admin')}>👨‍🏫 老師管理後台</button>
-        <button style={bigBtn} onClick={() => setRole('projector')}>📺 投影幕排行榜</button>
-        <button style={bigBtn} onClick={() => setRole('player')}>📱 學生手機端</button>
+        <h1 style={{color: '#1890ff', marginBottom: '40px'}}>台灣史「你講我猜」系統</h1>
+        <button style={bigBtn} onClick={() => setRole('projector')}>💻 我是投影幕 (電腦)</button>
+        <button style={bigBtn} onClick={() => setRole('player')}>📱 我是控制器 (手機)</button>
       </div>
     );
   }
 
-  // --- 角色分流 ---
-  if (role === 'admin') return <AdminView roomData={roomData} inputText={inputText} setInputText={setInputText} gameMode={gameMode} setGameMode={setGameMode} handleCreateTeams={handleCreateTeams} handleStartMaster={handleStartMaster} />;
-  if (role === 'projector') return <ProjectorView roomData={roomData} />;
-  if (role === 'player') return <PlayerView roomData={roomData} />;
+  return role === 'projector' ? 
+    <ProjectorView roomData={roomData} startGame={startGame} /> : 
+    <PlayerView roomDataRef={roomDataRef} />;
 }
 
-// --- 1. 老師管理介面 ---
-function AdminView({ roomData, inputText, setInputText, gameMode, setGameMode, handleCreateTeams, handleStartMaster }) {
-  return (
-    <div style={layoutStyle}>
-      <h2>老師控制台</h2>
-      <div style={cardStyle}>
-        <p>1. 選擇模式： 
-          <select value={gameMode} onChange={(e) => setGameMode(e.target.value)}>
-            <option value="simultaneous">全體同步比賽 (同一套題)</option>
-            <option value="turn-based">輪流分組比賽 (不同題庫)</option>
-          </select>
-        </p>
-        <textarea placeholder="貼上名單..." style={{width: '100%', height: '80px'}} value={inputText} onChange={(e) => setInputText(e.target.value)} />
-        <button style={btnStyle} onClick={handleCreateTeams}>隨機分組並抽人</button>
-      </div>
-      
-      {roomData?.state === 'TEAMS_READY' && (
-        <button style={{...btnStyle, backgroundColor: '#f5222d', fontSize: '24px'}} onClick={handleStartMaster}>
-          🚀 按此開始計時 (180秒)
-        </button>
-      )}
-      <button onClick={() => update(ref(db, `rooms/${ROOM_ID}`), {state: 'LOBBY', teams: null})} style={{fontSize: '12px', marginTop: '20px'}}>重置所有資料</button>
-    </div>
-  );
-}
-
-// --- 2. 投影幕排行榜 (動態長條圖) ---
-function ProjectorView({ roomData }) {
-  const [timer, setTimer] = useState(180);
-
+// --- 投影幕組件 (三欄式佈局) ---
+function ProjectorView({ roomData, startGame }) {
   useEffect(() => {
-    let interval;
+    let timer;
     if (roomData?.state === 'PLAYING' && roomData.timeLeft > 0) {
-      interval = setInterval(() => {
+      timer = setInterval(() => {
         update(ref(db, `rooms/${ROOM_ID}`), { timeLeft: roomData.timeLeft - 1 });
       }, 1000);
+    } else if (roomData?.timeLeft === 0 && roomData.state === 'PLAYING') {
+      update(ref(db, `rooms/${ROOM_ID}`), { state: 'ENDED' });
     }
-    return () => clearInterval(interval);
+    return () => clearInterval(timer);
   }, [roomData?.state, roomData?.timeLeft]);
 
-  const teams = roomData?.teams ? Object.values(roomData.teams) : [];
-  const maxScore = Math.max(...teams.map(t => t.score), 10);
+  if (!roomData || roomData.state === 'LOBBY') {
+    return <div style={layoutStyle}><h1>準備開始遊戲</h1><button style={btnStyle} onClick={startGame}>開始新回合</button></div>;
+  }
 
-  return (
-    <div style={{...layoutStyle, justifyContent: 'flex-start', paddingTop: '50px'}}>
-      <div style={{fontSize: '48px', fontWeight: 'bold'}}>倒數計時：{roomData?.timeLeft}s</div>
-      <div style={chartContainer}>
-        {teams.map((t, i) => (
-          <div key={i} style={chartRow}>
-            <div style={teamLabel}>{t.name}<br/><small>{t.guesser}</small></div>
-            <div style={barWrapper}>
-              <div style={{...bar, width: `${(t.score / maxScore) * 80}%`}}>
-                <span style={scoreLabel}>{t.score} 分</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      {roomData?.state === 'ENDED' && <h1>🏁 遊戲結束！</h1>}
-    </div>
-  );
-}
-
-// --- 3. 學生手機端 ---
-function PlayerView({ roomData }) {
-  const [myTeamId, setMyTeamId] = useState(null);
-
-  const handleScore = async (type) => {
-    const team = roomData.teams[myTeamId];
-    const nextIndex = team.currentIndex + 1;
-    const currentQ = (roomData.config.mode === 'simultaneous' ? roomData.commonQueue : team.teamQueue)[team.currentIndex];
-    
-    const updates = {};
-    updates[`rooms/${ROOM_ID}/teams/${myTeamId}/score`] = type === '正確' ? team.score + 1 : team.score;
-    updates[`rooms/${ROOM_ID}/teams/${myTeamId}/currentIndex`] = nextIndex;
-    const history = [...(team.history || []), { q: currentQ.term, type }];
-    updates[`rooms/${ROOM_ID}/teams/${myTeamId}/history`] = history;
-
-    update(ref(db), updates);
-  };
-
-  const joinTeam = async (tid) => {
-    if (roomData.config.mode === 'turn-based') {
-      // 輪流模式：加入時才幫該組抽題庫
-      const snapshot = await get(ref(db, 'question_pool'));
-      const pool = Object.values(snapshot.val()).sort(() => Math.random() - 0.5);
-      update(ref(db, `rooms/${ROOM_ID}/teams/${tid}`), { teamQueue: pool });
-    }
-    setMyTeamId(tid);
-  };
-
-  if (!myTeamId) {
+  if (roomData.state === 'ENDED') {
     return (
       <div style={layoutStyle}>
-        <h3>選擇你的組別</h3>
-        {roomData?.teams ? Object.entries(roomData.teams).map(([id, t]) => (
-          <button key={id} style={bigBtn} onClick={() => joinTeam(id)}>{t.name} ({t.guesser})</button>
-        )) : "等待老師分組中..."}
+        <h1 style={{fontSize: '60px'}}>回合結束</h1>
+        <h2 style={{fontSize: '80px', color: '#1890ff'}}>最終得分：{roomData.score}</h2>
+        <button style={btnStyle} onClick={startGame}>再玩一局</button>
       </div>
     );
   }
 
-  const team = roomData.teams[myTeamId];
-  const queue = roomData.config.mode === 'simultaneous' ? roomData.commonQueue : team.teamQueue;
-  const currentQ = queue ? queue[team.currentIndex] : null;
-
-  if (roomData.state !== 'PLAYING') return <div style={layoutStyle}><h2>等待老師開始遊戲...</h2></div>;
-  if (!currentQ) return <div style={layoutStyle}><h2>題目用完了！</h2></div>;
+  const currentQ = roomData.queue?.[roomData.currentIndex];
+  // 分類歷史紀錄
+  const correctHistory = roomData.history?.filter(h => h.type === '正確') || [];
+  const skipHistory = roomData.history?.filter(h => h.type === '跳過') || [];
 
   return (
-    <div style={{...layoutStyle, backgroundColor: '#1890ff', color: '#fff'}}>
-      <h1 style={{fontSize: '48px'}}>{currentQ.term}</h1>
-      <p>你是 {team.guesser}，加油！</p>
-      <div style={{display: 'flex', gap: '20px', marginTop: '50px'}}>
-        <button style={{...bigBtn, backgroundColor: '#52c41a'}} onClick={() => handleScore('正確')}>正確 ✅</button>
-        <button style={{...bigBtn, backgroundColor: '#ff4d4f'}} onClick={() => handleScore('跳過')}>跳過 ⏩</button>
+    <div style={gameScreenStyle}>
+      {/* 頂部資訊欄 */}
+      <div style={topBar}>
+        <div style={infoText}>剩餘時間：{roomData.timeLeft}s</div>
+        <div style={infoText}>目前分數：{roomData.score}</div>
+      </div>
+
+      <div style={mainContent}>
+        {/* 左側：正確清單 */}
+        <div style={sideColumn}>
+          <h2 style={{color: '#28a745', borderBottom: '2px solid #28a745'}}>正確 ({correctHistory.length})</h2>
+          <div style={listScroll}>
+            {correctHistory.slice().reverse().map((h, i) => (
+              <div key={i} style={listItem}>✔ {h.q}</div>
+            ))}
+          </div>
+        </div>
+
+        {/* 中間：目前題目 */}
+        <div style={centerColumn}>
+          <div style={{fontSize: '40px', color: '#aaa', marginBottom: '20px'}}>{currentQ?.category}</div>
+          <h1 style={{fontSize: '120px', margin: '0', color: '#fff'}}>{currentQ?.term}</h1>
+        </div>
+
+        {/* 右側：跳過清單 */}
+        <div style={sideColumn}>
+          <h2 style={{color: '#dc3545', borderBottom: '2px solid #dc3545'}}>跳過 ({skipHistory.length})</h2>
+          <div style={listScroll}>
+            {skipHistory.slice().reverse().map((h, i) => (
+              <div key={i} style={listItem}>✘ {h.q}</div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// --- 樣式定義 ---
-const layoutStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', textAlign: 'center', padding: '20px', fontFamily: 'system-ui' };
-const bigBtn = { padding: '20px', fontSize: '20px', margin: '10px', borderRadius: '12px', border: 'none', color: '#fff', backgroundColor: '#1890ff', cursor: 'pointer', width: '250px' };
-const btnStyle = { padding: '15px 30px', fontSize: '18px', margin: '10px', borderRadius: '8px', border: 'none', backgroundColor: '#52c41a', color: '#fff', cursor: 'pointer' };
-const cardStyle = { backgroundColor: '#f0f2f5', padding: '20px', borderRadius: '12px', width: '90%', maxWidth: '500px', marginBottom: '20px' };
-const chartContainer = { width: '80%', marginTop: '50px', textAlign: 'left' };
-const chartRow = { display: 'flex', alignItems: 'center', marginBottom: '20px', height: '60px' };
-const teamLabel = { width: '150px', fontSize: '20px', fontWeight: 'bold', textAlign: 'right', paddingRight: '20px' };
-const barWrapper = { flex: 1, backgroundColor: '#eee', height: '40px', borderRadius: '20px', overflow: 'hidden', position: 'relative' };
-const bar = { height: '100%', backgroundColor: '#1890ff', transition: 'width 0.5s ease-out', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '15px' };
-const scoreLabel = { color: '#fff', fontWeight: 'bold' };
+// --- 控制器組件 ---
+function PlayerView({ roomDataRef }) {
+  const submitAction = async (type) => {
+    const data = roomDataRef.current;
+    if (!data || data.state !== 'PLAYING') return;
+
+    const nextIndex = data.currentIndex + 1;
+    const currentQ = data.queue[data.currentIndex];
+    const newHistory = [...(data.history || []), { q: currentQ.term, type: type }];
+    
+    await update(ref(db, `rooms/${ROOM_ID}`), {
+      currentIndex: nextIndex,
+      score: type === '正確' ? data.score + 1 : data.score,
+      history: newHistory,
+      state: nextIndex >= data.queue.length ? 'ENDED' : 'PLAYING'
+    });
+  };
+
+  const currentData = roomDataRef.current;
+  if (!currentData || currentData.state !== 'PLAYING') {
+    return <div style={layoutStyle}><h2>等待遊戲開始...</h2><p>請在電腦端按下開始</p></div>;
+  }
+
+  return (
+    <div style={{ ...layoutStyle, backgroundColor: '#1890ff', color: '#fff' }}>
+      <h2 style={{fontSize: '40px', marginBottom: '50px'}}>{currentData.queue?.[currentData.currentIndex]?.term}</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '80%' }}>
+        <button style={{ ...controlBtn, backgroundColor: '#28a745' }} onClick={() => submitAction('正確')}>正確 (點頭)</button>
+        <button style={{ ...controlBtn, backgroundColor: '#dc3545' }} onClick={() => submitAction('跳過')}>跳過 (仰頭)</button>
+      </div>
+    </div>
+  );
+}
+
+// --- 樣式設定 (三欄式佈局) ---
+const layoutStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', textAlign: 'center', padding: '20px' };
+const gameScreenStyle = { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#111', color: '#fff', overflow: 'hidden' };
+const topBar = { display: 'flex', justifyContent: 'space-around', padding: '20px', backgroundColor: '#222', borderBottom: '1px solid #333' };
+const infoText = { fontSize: '32px', fontWeight: 'bold' };
+
+const mainContent = { display: 'flex', flex: 1, overflow: 'hidden' };
+const sideColumn = { width: '25%', padding: '20px', backgroundColor: 'rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' };
+const centerColumn = { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', borderLeft: '1px solid #333', borderRight: '1px solid #333' };
+
+const listScroll = { flex: 1, overflowY: 'auto', marginTop: '10px' };
+const listItem = { fontSize: '24px', padding: '10px 0', borderBottom: '1px solid #222', textAlign: 'left' };
+
+const bigBtn = { padding: '25px 50px', fontSize: '24px', margin: '15px', borderRadius: '15px', border: 'none', backgroundColor: '#1890ff', color: '#fff', cursor: 'pointer', width: '320px' };
+const btnStyle = { padding: '15px 40px', fontSize: '24px', borderRadius: '10px', cursor: 'pointer', border: 'none', backgroundColor: '#28a745', color: '#fff', marginTop: '20px' };
+const controlBtn = { padding: '30px', fontSize: '28px', border: 'none', borderRadius: '15px', color: '#fff', fontWeight: 'bold' };
+const historyBox = { maxHeight: '60vh', overflowY: 'auto', width: '80%', padding: '20px' };
