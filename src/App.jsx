@@ -72,7 +72,9 @@ function ProjectorView({ roomData, startGame }) {
     return (
       <div style={layoutStyle}>
         <h1 style={{fontSize: '60px'}}>結束！得分：{roomData.score}</h1>
-        <div style={historyBox}>{roomData.history?.map((h, i) => (<div key={i}>● {h.q} ({h.type})</div>))}</div>
+        <div style={historyBox}>
+          {roomData.history?.map((h, i) => (<div key={i} style={{fontSize: '24px', margin: '5px'}}>● {h.q} ({h.type})</div>))}
+        </div>
         <button style={btnStyle} onClick={startGame}>再玩一局</button>
       </div>
     );
@@ -81,51 +83,61 @@ function ProjectorView({ roomData, startGame }) {
   const currentQ = roomData.queue?.[roomData.currentIndex];
   return (
     <div style={{ ...layoutStyle, backgroundColor: '#000', color: '#fff' }}>
-      <div style={{ fontSize: '40px', position: 'absolute', top: '20px' }}>時間：{roomData.timeLeft}s | 得分：{roomData.score}</div>
+      <div style={{ fontSize: '40px', position: 'absolute', top: '20px' }}>時間：{roomData.timeLeft}s | 分數：{roomData.score}</div>
       <h1 style={{ fontSize: '180px', margin: '20px 0' }}>{currentQ?.term}</h1>
-      <p style={{ fontSize: '40px', color: '#888' }}>{currentQ?.category}</p>
+      <p style={{ fontSize: '40px', color: '#888' }}>主題：{currentQ?.category}</p>
     </div>
   );
 }
 
-// --- 手機猜題者組件 (校正強化版) ---
+// --- 手機猜題者組件 (精準判定版) ---
 function PlayerView({ roomDataRef }) {
+  const [isGyroEnabled, setIsGyroEnabled] = useState(false);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [readyToTrigger, setReadyToTrigger] = useState(true);
-  const [currentBeta, setCurrentBeta] = useState(0);
+  const [displayAngle, setDisplayAngle] = useState(0);
   
-  const offsetRef = useRef(0); // 存儲校正偏移量
+  const offsetRef = useRef(0); 
   const readyRef = useRef(true);
+
+  // 核心演算法：計算最短角度差，解決 0 變 -179 的跳轉問題
+  const getShortestDiff = (current, reference) => {
+    let diff = current - reference;
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    return diff;
+  };
 
   const handleMotion = (e) => {
     const rawBeta = e.beta;
+    
+    // 如果尚未校正，紀錄第一秒的角度為基準
     if (!isCalibrated) {
-      // 第一次偵測時，紀錄當前角度為基準
       offsetRef.current = rawBeta;
       setIsCalibrated(true);
       return;
     }
 
-    // 計算相對於基準點的角度
-    const relativeBeta = rawBeta - offsetRef.current;
-    setCurrentBeta(relativeBeta.toFixed(1));
+    // 計算相對角度 (使用最短路徑邏輯)
+    const relativeBeta = getShortestDiff(rawBeta, offsetRef.current);
+    setDisplayAngle(relativeBeta.toFixed(1));
 
-    // 1. 回正判定 (Neutral Zone)
-    if (Math.abs(relativeBeta) < 15) {
+    // 1. 回正判定 (Neutral Zone: -20 到 20 度)
+    if (Math.abs(relativeBeta) < 20) {
       readyRef.current = true;
       setReadyToTrigger(true);
       return;
     }
 
-    // 2. 觸發判定 (點頭 = 負, 仰頭 = 正)
-    if (!readyRef.current) return;
+    // 2. 觸發判定 (必須在 Playing 狀態且已準備好)
     const currentData = roomDataRef.current;
-    if (!currentData || currentData.state !== 'PLAYING') return;
+    if (!readyRef.current || !currentData || currentData.state !== 'PLAYING') return;
 
-    if (relativeBeta < -30) { 
-      submitAction('正確'); // 點頭
-    } else if (relativeBeta > 30) { 
-      submitAction('跳過'); // 仰頭
+    // 動作判定門檻 (可根據靈敏度微調)
+    if (relativeBeta < -40) { 
+      submitAction('正確'); // 點頭 (負數方向)
+    } else if (relativeBeta > 40) { 
+      submitAction('跳過'); // 仰頭 (正數方向)
     }
   };
 
@@ -134,6 +146,8 @@ function PlayerView({ roomDataRef }) {
     setReadyToTrigger(false);
 
     const currentData = roomDataRef.current;
+    if (!currentData || !currentData.queue) return;
+
     const nextIndex = currentData.currentIndex + 1;
     const currentQ = currentData.queue[currentData.currentIndex];
     const newHistory = [...(currentData.history || []), { q: currentQ.term, type: type }];
@@ -149,32 +163,47 @@ function PlayerView({ roomDataRef }) {
   const enableGyro = () => {
     if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().then(s => {
-        if (s === 'granted') window.addEventListener('deviceorientation', handleMotion, true);
+        if (s === 'granted') {
+          window.addEventListener('deviceorientation', handleMotion, true);
+          setIsGyroEnabled(true);
+        }
       });
     } else {
       window.addEventListener('deviceorientation', handleMotion, true);
+      setIsGyroEnabled(true);
     }
   };
 
-  const currentData = roomDataRef.current;
-  if (!currentData || currentData.state !== 'PLAYING') {
-    return <div style={layoutStyle}><h2>等待遊戲開始...</h2><button style={btnStyle} onClick={enableGyro}>啟動感應模式</button></div>;
-  }
-
+  // UI：不管遊戲是否開始，只要感應器沒啟動就顯示啟動按鈕
   return (
     <div style={{ ...layoutStyle, backgroundColor: readyToTrigger ? '#1890ff' : '#444', color: '#fff' }}>
-      <h2 style={{fontSize: '50px'}}>{currentData.queue?.[currentData.currentIndex]?.term}</h2>
-      <p style={{marginTop: '30px'}}>{readyToTrigger ? "請把手機橫放額頭" : "請回正手機..."}</p>
-      
-      <div style={{position: 'absolute', bottom: '20px', fontSize: '14px', textAlign: 'center'}}>
-        相對角度: {currentBeta}°<br/>
-        (點頭需低於 -30° | 仰頭需高於 30°)
-      </div>
-
-      <div style={{marginTop: '40px', display: 'flex', gap: '20px'}}>
-        <button style={smallBtn} onClick={() => submitAction('正確')}>正確</button>
-        <button style={smallBtn} onClick={() => submitAction('跳過')}>跳過</button>
-      </div>
+      {!isGyroEnabled ? (
+        <div style={layoutStyle}>
+          <h2>第一步：準備感應器</h2>
+          <p>請點擊按鈕後將手機橫放額頭平視前方</p>
+          <button style={btnStyle} onClick={enableGyro}>啟動並校正感應器</button>
+        </div>
+      ) : roomDataRef.current?.state !== 'PLAYING' ? (
+        <div style={layoutStyle}>
+          <h2>感應器已就緒 ✅</h2>
+          <p>等待電腦端點擊「開始遊戲」...</p>
+          <div style={{fontSize: '12px'}}>相對角度: {displayAngle}°</div>
+        </div>
+      ) : (
+        <div style={layoutStyle}>
+          <h2 style={{fontSize: '54px'}}>{roomDataRef.current.queue?.[roomDataRef.current.currentIndex]?.term}</h2>
+          <p style={{marginTop: '30px', fontSize: '20px'}}>
+            {readyToTrigger ? "手機放在額頭 (螢幕朝前)" : "已跳轉！請回正手機..."}
+          </p>
+          <div style={{position: 'absolute', bottom: '20px', fontSize: '14px'}}>
+            相對角度: {displayAngle}° | 點頭(負) 仰頭(正)
+          </div>
+          <div style={{marginTop: '40px', display: 'flex', gap: '20px'}}>
+            <button style={smallBtn} onClick={() => submitAction('正確')}>正確</button>
+            <button style={smallBtn} onClick={() => submitAction('跳過')}>跳過</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -183,4 +212,4 @@ const layoutStyle = { display: 'flex', flexDirection: 'column', alignItems: 'cen
 const bigBtn = { padding: '25px 50px', fontSize: '24px', margin: '15px', borderRadius: '15px', border: 'none', backgroundColor: '#1890ff', color: '#fff', cursor: 'pointer' };
 const btnStyle = { padding: '15px 40px', fontSize: '20px', borderRadius: '10px', cursor: 'pointer', border: 'none', backgroundColor: '#28a745', color: '#fff' };
 const smallBtn = { padding: '20px 30px', fontSize: '20px', borderRadius: '10px', border: 'none', backgroundColor: 'rgba(255,255,255,0.3)', color: '#fff' };
-const historyBox = { maxHeight: '40vh', overflowY: 'auto', backgroundColor: '#eee', padding: '20px', borderRadius: '10px', width: '80%', color: '#333', marginTop: '20px' };
+const historyBox = { maxHeight: '50vh', overflowY: 'auto', backgroundColor: '#eee', padding: '20px', borderRadius: '10px', width: '80%', color: '#333', marginTop: '20px', textAlign: 'left' };
