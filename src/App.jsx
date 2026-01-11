@@ -5,16 +5,14 @@ import { ref, set, onValue, update, get } from "firebase/database";
 
 const ROOM_ID = "ROOM_001"; 
 
-// --- 定義色票 ---
 const COLORS = {
-  cream: '#FFFDE7',  // 米白
-  gold: '#FCE38A',   // 淡金
-  green: '#95C173',  // 草綠 (用於按鈕標示)
-  red: '#950707',    // 深紅 (對稱顏色)
-  text: '#2D2926'    // 深褐黑文字
+  cream: '#FFFDE7',  
+  gold: '#FCE38A',   
+  green: '#95C173',  
+  red: '#950707',    
+  text: '#2D2926'    
 };
 
-// --- 字體設定 ---
 const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU", "serif"';
 
 export default function App() {
@@ -24,7 +22,6 @@ export default function App() {
   const audioRef = useRef(null);
   const roomDataRef = useRef(null);
 
-  // 1. 全域監聽 Firebase
   useEffect(() => {
     const roomRef = ref(db, `rooms/${ROOM_ID}`);
     return onValue(roomRef, (snapshot) => {
@@ -34,10 +31,10 @@ export default function App() {
     });
   }, []);
 
-  // 2. 音量控制
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
+      audioRef.current.volume = 0.4; // 設定初始音量
     }
   }, [isMuted]);
 
@@ -45,19 +42,15 @@ export default function App() {
     if (window.confirm("確定要重置並回到首頁嗎？")) {
       await update(ref(db, `rooms/${ROOM_ID}`), {
         state: 'SETTINGS', subject: null, category: null,
-        usedIds: [], roundScores: [], currentRound: 1, score: 0, sensor: null
+        usedIds: [], roundScores: [], currentRound: 1, score: 0
       });
       setView('HOME');
     }
   };
 
-  // --- 音量切換組件 ---
   const VolumeControl = () => (
-    <button 
-      onClick={() => setIsMuted(!isMuted)} 
-      style={volumeBtnStyle}
-    >
-      {isMuted ? '🔇 靜音中' : '🔊 音樂中'}
+    <button onClick={() => setIsMuted(!isMuted)} style={volumeBtnStyle}>
+      {isMuted ? '🔇' : '🔊'}
     </button>
   );
 
@@ -67,13 +60,13 @@ export default function App() {
     if (view === 'HOME') return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h1 style={mainTitleStyle}>你講我臆</h1>
+          <h1 style={responsiveMainTitle}>你講我臆</h1>
           <button style={startBtn} onClick={() => {
             setView('SUBJECT');
-            if (audioRef.current) audioRef.current.play(); // 使用者互動後啟動音樂
-          }}>開始挑戰 ➔</button>
+            if (audioRef.current) audioRef.current.play().catch(() => {}); 
+          }}>開始點按 ➔</button>
         </div>
-        <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️</button>
+        <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ 題庫匯入</button>
         <VolumeControl />
       </div>
     );
@@ -84,8 +77,8 @@ export default function App() {
           <h2 style={subTitle}>選擇科目</h2>
           <div style={gridContainer}>
             <button style={roleBtn} onClick={() => setView('CATEGORY')}>📜 歷史</button>
-            <button style={roleBtnDisabled} disabled>🌍 地理 (建置中)</button>
-            <button style={roleBtnDisabled} disabled>⚖️ 公民 (建置中)</button>
+            <button style={roleBtnDisabled} disabled>🌍 地理</button>
+            <button style={roleBtnDisabled} disabled>⚖️ 公民</button>
           </div>
           <button style={backLink} onClick={() => setView('HOME')}>← 返回</button>
         </div>
@@ -101,7 +94,7 @@ export default function App() {
             <h2 style={subTitle}>選擇範圍</h2>
             <div style={gridContainer}>
               {categories.map(cat => (
-                <button key={cat} style={roleBtn} onClick={async () => {
+                <button key={cat} style={categoryGridBtn} onClick={async () => {
                   await update(ref(db, `rooms/${ROOM_ID}`), { subject: '歷史', category: cat });
                   setView('ROLE');
                 }}>{cat}</button>
@@ -117,8 +110,8 @@ export default function App() {
     if (view === 'ROLE') return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h2 style={subTitle}>{roomData?.category} - 選擇身分</h2>
-          <div style={{display: 'flex', gap: '20px', justifyContent: 'center'}}>
+          <h2 style={subTitle}>{roomData?.category}<br/>選擇身分</h2>
+          <div style={gridContainer}>
             <button style={roleBtn} onClick={() => setView('PROJECTOR')}>💻 投影幕端</button>
             <button style={roleBtn} onClick={() => setView('PLAYER')}>📱 控制器端</button>
           </div>
@@ -133,10 +126,10 @@ export default function App() {
   };
 
   return (
-    <div style={{fontFamily: FONT_FAMILY, color: COLORS.text}}>
-      {/* 背景音樂，此連結可換成你的音樂檔案路徑 */}
+    <div style={{fontFamily: FONT_FAMILY, color: COLORS.text, overflowX: 'hidden'}}>
+      {/* 使用 8-bit / 遊戲風格的背景音樂連結 */}
       <audio ref={audioRef} loop>
-        <source src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg" />
+        <source src="https://files.freemusicarchive.org/storage-freemusicarchive-org/music/no_curator/RoccoW/Weekly_Beats_2014/RoccoW_-_Weekly_Beats_2014_05_-_Chip_On_Your_Shoulder.mp3" type="audio/mpeg" />
       </audio>
       {renderContent()}
     </div>
@@ -160,19 +153,17 @@ function AdminView({ onBack }) {
         category: String(i['章節'] || ''),
         keywords: i['關鍵字'] || ''
       }));
-      if (window.confirm(`讀取到 ${formatted.length} 筆題目，確定匯入嗎？`)) {
+      if (window.confirm(`讀取到 ${formatted.length} 筆，確定匯入？`)) {
         set(ref(db, 'question_pool'), formatted).then(() => alert("匯入成功！"));
       }
     };
     reader.readAsArrayBuffer(file);
   };
-
   return (
     <div style={lobbyContainer}>
       <div style={glassCard}>
-        <h2 style={{color: COLORS.red}}>⚙️ 題庫管理</h2>
-        <input type="file" accept=".xlsx" onChange={handleFileUpload} style={{margin: '30px 0'}} />
-        <br/>
+        <h2>⚙️ 題庫管理</h2>
+        <input type="file" accept=".xlsx" onChange={handleFileUpload} style={{margin: '20px 0', width: '100%'}} />
         <button style={backLink} onClick={onBack}>← 返回</button>
       </div>
     </div>
@@ -195,11 +186,10 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
 
   const startRound = async () => {
     const snapshot = await get(ref(db, 'question_pool'));
-    if (!snapshot.exists()) return alert("請先匯入題庫！");
-    const pool = Object.values(snapshot.val());
+    const pool = Object.values(snapshot.val() || {});
     let filtered = roomData.category === '全範圍' ? pool : pool.filter(q => (q.book && q.book.includes(roomData.category)) || (q.category && q.category.includes(roomData.category)));
     if (!roomData.allowDuplicate) filtered = filtered.filter(q => !(roomData.usedIds || []).includes(q.id));
-    if (filtered.length === 0) return alert(`範圍「${roomData.category}」題目已用完！`);
+    if (filtered.length === 0) return alert("題目已用完！");
     const shuffled = filtered.sort(() => Math.random() - 0.5);
     await update(ref(db, `rooms/${ROOM_ID}`), { state: 'PLAYING', queue: shuffled, currentIndex: 0, score: 0, history: [], timeLeft: roomData.timePerRound });
   };
@@ -214,12 +204,11 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
     return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h2 style={{...subTitle, color: COLORS.red}}>初始設定 ({roomData?.category})</h2>
-          <div style={settingRow}><span>總回合數</span><input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e=>setTempSettings({...tempSettings, rounds: parseInt(e.target.value)})} /></div>
-          <div style={settingRow}><span>每輪秒數</span><input type="number" style={inputStyle} value={tempSettings.time} onChange={e=>setTempSettings({...tempSettings, time: parseInt(e.target.value)})} /></div>
-          <label style={{display: 'block', margin: '20px 0'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
+          <h2 style={{...subTitle, color: COLORS.red}}>初始設定</h2>
+          <div style={settingRow}><span>總回合</span><input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e=>setTempSettings({...tempSettings, rounds: parseInt(e.target.value)})} /></div>
+          <div style={settingRow}><span>秒數</span><input type="number" style={inputStyle} value={tempSettings.time} onChange={e=>setTempSettings({...tempSettings, time: parseInt(e.target.value)})} /></div>
+          <label style={{display: 'block', margin: '15px 0'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
           <button style={{...startBtn, background: COLORS.green}} onClick={() => update(ref(db, `rooms/${ROOM_ID}`), { state: 'LOBBY', totalRounds: tempSettings.rounds, timePerRound: tempSettings.time, allowDuplicate: tempSettings.dup })}>儲存設定</button>
-          <button style={backLink} onClick={resetSystem}>取消</button>
         </div>
         {volumeComp}
       </div>
@@ -232,11 +221,9 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
       return (
         <div style={lobbyContainer}>
           <div style={glassCard}>
-            <h1 style={{fontSize: '48px', color: COLORS.red}}>🏆 總成績結算</h1>
-            <div style={{margin: '30px 0'}}>
-              {roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
-            </div>
-            <h2 style={{fontSize: '64px', color: COLORS.green, marginBottom: '30px'}}>總分：{total}</h2>
+            <h1 style={{fontSize: '32px', color: COLORS.red}}>🏆 總成績</h1>
+            {roomData.roundScores?.map((r, i) => <div key={i}>第 {r.round} 輪：{r.score} 分</div>)}
+            <h2 style={{fontSize: '48px', color: COLORS.green}}>總分：{total}</h2>
             <button style={{...startBtn, background: COLORS.red}} onClick={resetSystem}>重新開始</button>
           </div>
           {volumeComp}
@@ -246,8 +233,8 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
     return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h1 style={{fontSize: '32px', color: COLORS.red}}>{roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
-          <h2 style={{margin: '30px 0', color: COLORS.green, fontSize: '60px'}}>第 {roomData.state === 'ROUND_END' ? roomData.currentRound + 1 : roomData.currentRound} 輪</h2>
+          <h1 style={{fontSize: '28px', color: COLORS.red}}>{roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
+          <h2 style={{margin: '20px 0', color: COLORS.green, fontSize: '40px'}}>第 {roomData.state === 'ROUND_END' ? roomData.currentRound + 1 : roomData.currentRound} 輪</h2>
           <button style={{...startBtn, background: COLORS.green}} onClick={async () => {
             if(roomData.state === 'ROUND_END') await update(ref(db, `rooms/${ROOM_ID}`), { currentRound: roomData.currentRound + 1 });
             startRound();
@@ -272,30 +259,28 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           const newScores = [...(roomData.roundScores || []), { round: roomData.currentRound, score: roomData.score }];
           const newUsedIds = [...(roomData.usedIds || []), ...roomData.queue.slice(0, roomData.currentIndex).map(q => q.id)];
           await update(ref(db, `rooms/${ROOM_ID}`), { state: roomData.currentRound >= roomData.totalRounds ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds });
-        }}>確認結算 ➔</button>}
+        }}>結算 ➔</button>}
         <button style={resetSmallBtn} onClick={resetSystem}>RESET</button>
       </div>
       <div style={mainContent}>
-        {/* 左側：深紅對稱 */}
         <div style={sideColumnRed}>
           <h3 style={columnTitle}>正確</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '正確' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✓ {h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
             )).reverse()}
           </div>
         </div>
         <div style={centerColumn}>
-          <div style={{fontSize: '32px', color: COLORS.red, marginBottom: '10px'}}>{currentQ?.category}</div>
+          <div style={{fontSize: '24px', color: COLORS.red}}>{currentQ?.category}</div>
           <h1 style={mainTermStyle(currentQ?.term || "")}>{currentQ?.term}</h1>
-          {isReview && <div style={{color: COLORS.red, fontSize: '28px', marginTop: '30px', fontWeight: 'bold'}}>核對模式：可點擊清單修正</div>}
+          {isReview && <div style={{color: COLORS.red, fontSize: '20px', marginTop: '20px'}}>核對模式：點擊可修正</div>}
         </div>
-        {/* 右側：深紅對稱 */}
         <div style={sideColumnRed}>
           <h3 style={columnTitle}>跳過</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '跳過' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✘ {h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
             )).reverse()}
           </div>
         </div>
@@ -316,12 +301,18 @@ function PlayerView({ roomDataRef, volumeComp }) {
     await update(ref(db, `rooms/${ROOM_ID}`), { currentIndex: nextIdx, score: type === '正確' ? data.score + 1 : data.score, history: newH });
   };
   const data = roomDataRef.current;
-  if (!data || data.state !== 'PLAYING') return <div style={layoutStyleMobile}><h2>⏳ 等待開始...</h2><p>範圍：{data?.category}</p>{volumeComp}</div>;
+  if (!data || data.state !== 'PLAYING') return (
+    <div style={layoutStyleMobile}>
+      <h2>⏳ 等待開始...</h2>
+      <p style={{fontSize: '18px'}}>範圍：{data?.category || '未定'}</p>
+      {volumeComp}
+    </div>
+  );
   return (
     <div style={layoutStyleMobile}>
-      <h2 style={{fontSize: '32px', color: COLORS.red, position: 'absolute', top: '20px'}}>第 {data.currentRound} 輪</h2>
-      <h2 style={{fontSize: '54px', color: COLORS.text, marginBottom: '50px', fontWeight: '900'}}>{data.queue?.[data.currentIndex]?.term}</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '85%' }}>
+      <h2 style={{fontSize: '24px', color: COLORS.red, position: 'absolute', top: '20px'}}>第 {data.currentRound} 輪</h2>
+      <h2 style={{fontSize: 'min(12vw, 48px)', color: COLORS.text, marginBottom: '30px', fontWeight: '900'}}>{data.queue?.[data.currentIndex]?.term}</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '90%' }}>
         <button style={{ ...controlBtn, backgroundColor: COLORS.green }} onClick={() => submit('正確')}>正確</button>
         <button style={{ ...controlBtn, backgroundColor: COLORS.red }} onClick={() => submit('跳過')}>跳過</button>
       </div>
@@ -330,45 +321,45 @@ function PlayerView({ roomDataRef, volumeComp }) {
   );
 }
 
-// --- 4. 樣式系統 ---
-const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative' };
-const glassCard = { background: '#fff', padding: '50px', borderRadius: '40px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', minWidth: '500px', border: `4px solid ${COLORS.gold}` };
-const mainTitleStyle = { fontSize: '100px', fontWeight: '900', color: COLORS.red, marginBottom: '50px', letterSpacing: '15px' };
-const subTitle = { fontSize: '32px', marginBottom: '40px', color: COLORS.text, fontWeight: 'bold' };
-const gridContainer = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '40px' };
-const roleBtn = { padding: '25px', fontSize: '24px', borderRadius: '20px', border: `2px solid ${COLORS.gold}`, background: '#fff', cursor: 'pointer', fontWeight: 'bold', color: COLORS.text, fontFamily: FONT_FAMILY };
+// --- 4. 響應式樣式設定 ---
+const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '10px' };
+const glassCard = { background: '#fff', padding: '30px 20px', borderRadius: '30px', boxShadow: '0 15px 35px rgba(0,0,0,0.05)', textAlign: 'center', width: '100%', maxWidth: '450px', border: `3px solid ${COLORS.gold}`, boxSizing: 'border-box' };
+
+// 手機標題縮小
+const responsiveMainTitle = { 
+  fontSize: 'min(15vw, 80px)', 
+  fontWeight: '900', 
+  color: COLORS.red, 
+  marginBottom: '30px', 
+  letterSpacing: '5px' 
+};
+
+const subTitle = { fontSize: '24px', marginBottom: '20px', color: COLORS.text, fontWeight: 'bold' };
+const gridContainer = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' };
+
+// 按鈕大小優化
+const roleBtn = { padding: '15px 10px', fontSize: '18px', borderRadius: '15px', border: `2px solid ${COLORS.gold}`, background: '#fff', cursor: 'pointer', fontWeight: 'bold', color: COLORS.text, fontFamily: FONT_FAMILY };
+const categoryGridBtn = { ...roleBtn, fontSize: '16px' };
 const roleBtnDisabled = { ...roleBtn, background: '#eee', color: '#aaa', cursor: 'not-allowed', border: 'none' };
-const startBtn = { padding: '20px 60px', fontSize: '28px', borderRadius: '25px', border: 'none', background: COLORS.gold, color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', width: '100%', fontFamily: FONT_FAMILY };
-const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '18px', marginTop: '20px', fontFamily: FONT_FAMILY };
-const adminEntryBtn = { position: 'absolute', bottom: '20px', left: '20px', background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', opacity: 0.3 };
+const startBtn = { padding: '15px', fontSize: '22px', borderRadius: '20px', border: 'none', background: COLORS.gold, color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', width: '100%' };
+const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px', marginTop: '10px' };
+const adminEntryBtn = { position: 'absolute', bottom: '10px', left: '10px', background: 'none', border: 'none', fontSize: '14px', cursor: 'pointer', opacity: 0.3 };
 
 const gameScreenStyle = { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: COLORS.cream };
-const topBar = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 40px', background: COLORS.text, color: '#fff' };
-const infoText = { fontSize: '26px', fontWeight: 'bold' };
+const topBar = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px', background: COLORS.text, color: '#fff' };
+const infoText = { fontSize: '18px', fontWeight: 'bold' };
 const mainContent = { display: 'flex', flex: 1, overflow: 'hidden' };
-
-const sideColumnRed = { width: '15%', padding: '15px', background: COLORS.red, display: 'flex', flexDirection: 'column', color: '#fff' };
-const columnTitle = { fontSize: '22px', borderBottom: '2px solid rgba(255,255,255,0.3)', paddingBottom: '10px', textAlign: 'center', fontWeight: 'bold' };
-
-const centerColumn = { width: '70%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' };
-const mainTermStyle = (text) => ({ 
-  fontSize: text.length > 8 ? 'min(7vw, 90px)' : text.length > 5 ? 'min(10vw, 120px)' : 'min(14vw, 180px)', 
-  whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0, textAlign: 'center'
-});
-
+const sideColumnRed = { width: '18%', padding: '10px', background: COLORS.red, display: 'flex', flexDirection: 'column', color: '#fff' };
+const columnTitle = { fontSize: '16px', borderBottom: '1px solid rgba(255,255,255,0.3)', paddingBottom: '5px', textAlign: 'center' };
+const centerColumn = { width: '64%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 10px' };
+const mainTermStyle = (text) => ({ fontSize: text.length > 8 ? 'min(8vw, 80px)' : 'min(12vw, 140px)', whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0, textAlign: 'center' });
 const listScroll = { flex: 1, overflowY: 'auto' };
-const listItemWhite = { fontSize: '22px', padding: '10px', margin: '8px 0', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', textAlign: 'left', fontWeight: 'bold' };
+const listItemWhite = { fontSize: '16px', padding: '8px', margin: '5px 0', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', textAlign: 'left' };
+const resetSmallBtn = { padding: '5px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', fontSize: '10px' };
+const confirmBtn = { padding: '8px 12px', background: COLORS.gold, border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold' };
 
-const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
-const confirmBtn = { padding: '10px 20px', background: COLORS.gold, border: 'none', borderRadius: '8px', color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', fontFamily: FONT_FAMILY };
-
-const layoutStyleMobile = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', textAlign: 'center', background: COLORS.cream, position: 'relative' };
-const controlBtn = { padding: '40px', fontSize: '36px', border: 'none', borderRadius: '25px', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontFamily: FONT_FAMILY };
-const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 0', width: '100%', fontSize: '20px' };
-const inputStyle = { padding: '10px', borderRadius: '10px', border: `2px solid ${COLORS.gold}`, width: '100px', textAlign: 'center', fontSize: '18px', fontFamily: FONT_FAMILY };
-
-const volumeBtnStyle = { 
-  position: 'absolute', bottom: '20px', right: '20px', padding: '10px 15px', 
-  background: 'rgba(0,0,0,0.1)', border: 'none', borderRadius: '20px', 
-  cursor: 'pointer', fontSize: '14px', zIndex: 1000, fontFamily: FONT_FAMILY 
-};
+const layoutStyleMobile = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', textAlign: 'center', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box' };
+const controlBtn = { padding: '30px 0', fontSize: '28px', border: 'none', borderRadius: '20px', color: '#fff', fontWeight: 'bold', width: '100%', fontFamily: FONT_FAMILY };
+const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '10px 0', width: '100%' };
+const inputStyle = { padding: '8px', borderRadius: '8px', border: `2px solid ${COLORS.gold}`, width: '70px', textAlign: 'center' };
+const volumeBtnStyle = { position: 'absolute', bottom: '15px', right: '15px', padding: '10px', background: 'rgba(0,0,0,0.05)', border: 'none', borderRadius: '50%', cursor: 'pointer', fontSize: '20px', zIndex: 1000 };
