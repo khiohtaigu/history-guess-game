@@ -15,7 +15,6 @@ const COLORS = {
 
 const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU", "serif"';
 
-// 圖標樣式：將黑色圖標轉為深紅色的濾鏡
 const iconFilterRed = 'invert(11%) sepia(87%) saturate(6011%) hue-rotate(354deg) brightness(85%) contrast(116%)';
 const iconFilterGold = 'invert(88%) sepia(21%) saturate(769%) hue-rotate(344deg) brightness(102%) contrast(101%)';
 
@@ -54,16 +53,7 @@ export default function App() {
 
   const VolumeControl = () => (
     <button onClick={() => setIsMuted(!isMuted)} style={volumeBtnStyle}>
-      <img 
-        src="/music.png" 
-        alt="music" 
-        style={{ 
-          width: '100%', 
-          height: '100%', 
-          filter: isMuted ? 'grayscale(1)' : iconFilterRed,
-          opacity: isMuted ? 0.3 : 1
-        }} 
-      />
+      <img src="/music.png" alt="music" style={{ width: '100%', height: '100%', filter: isMuted ? 'grayscale(1)' : iconFilterRed, opacity: isMuted ? 0.3 : 1 }} />
     </button>
   );
 
@@ -73,7 +63,7 @@ export default function App() {
     if (view === 'HOME') return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h1 style={responsiveMainTitle}>你講我臆</h1>
+          <h1 style={responsiveTitle}>你講我臆</h1>
           <button style={startBtn} onClick={() => {
             setView('SUBJECT');
             if (audioRef.current) audioRef.current.play().catch(() => {}); 
@@ -140,15 +130,15 @@ export default function App() {
 
   return (
     <div style={{fontFamily: FONT_FAMILY, color: COLORS.text, overflowX: 'hidden'}}>
-      <audio ref={audioRef} loop crossOrigin="anonymous">
-        <source src="https://cdn.pixabay.com/audio/2024/05/22/audio_349d5c464e.mp3" type="audio/mpeg" />
+      <audio ref={audioRef} loop preload="auto">
+        <source src="/bgm.mp3" type="audio/mpeg" />
       </audio>
       {renderContent()}
     </div>
   );
 }
 
-// --- 1. 管理後台 ---
+// --- 管理後台 ---
 function AdminView({ onBack }) {
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -182,7 +172,7 @@ function AdminView({ onBack }) {
   );
 }
 
-// --- 2. 投影幕組件 ---
+// --- 投影幕組件 ---
 function ProjectorView({ roomData, resetSystem, volumeComp }) {
   const [tempSettings, setTempSettings] = useState({ rounds: 3, time: 180, dup: false });
 
@@ -206,10 +196,10 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
     await update(ref(db, `rooms/${ROOM_ID}`), { state: 'PLAYING', queue: shuffled, currentIndex: 0, score: 0, history: [], timeLeft: roomData.timePerRound });
   };
 
-  const toggleItem = async (idx) => {
+  const toggleItem = (idx) => {
     const newH = [...roomData.history];
     newH[idx].type = newH[idx].type === '正確' ? '跳過' : '正確';
-    await update(ref(db, `rooms/${ROOM_ID}`), { history: newH, score: newH.filter(h => h.type === '正確').length });
+    update(ref(db, `rooms/${ROOM_ID}`), { history: newH, score: newH.filter(h => h.type === '正確').length });
   };
 
   if (!roomData || roomData.state === 'SETTINGS') {
@@ -225,9 +215,8 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
             <span>每輪秒數</span>
             <input type="number" style={inputStyle} value={tempSettings.time} onChange={e=>setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})} />
           </div>
-          <label style={{display: 'block', margin: '20px 0'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
+          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
           <button style={{...startBtn, background: COLORS.green}} onClick={() => update(ref(db, `rooms/${ROOM_ID}`), { state: 'LOBBY', totalRounds: tempSettings.rounds, timePerRound: tempSettings.time, allowDuplicate: tempSettings.dup })}>儲存設定</button>
-          <button style={backLink} onClick={resetSystem}>取消</button>
         </div>
         {volumeComp}
       </div>
@@ -235,31 +224,24 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
   }
 
   if (roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
-    if (roomData.state === 'TOTAL_END') {
-      const total = (roomData.roundScores || []).reduce((a, b) => a + b.score, 0);
-      return (
-        <div style={lobbyContainer}>
-          <div style={glassCard}>
-            <h1 style={{fontSize: '48px', color: COLORS.red}}>🏆 總成績結算</h1>
-            <div style={{margin: '30px 0'}}>
-              {roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
-            </div>
-            <h2 style={{fontSize: '64px', color: COLORS.green, marginBottom: '30px'}}>總分：{total}</h2>
-            <button style={{...startBtn, background: COLORS.red}} onClick={resetSystem}>重新開始</button>
-          </div>
-          {volumeComp}
-        </div>
-      );
-    }
+    const total = (roomData.roundScores || []).reduce((a, b) => a + b.score, 0);
     return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h1 style={{fontSize: '32px', color: COLORS.red}}>{roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
-          <h2 style={{margin: '30px 0', color: COLORS.green, fontSize: '60px'}}>第 {roomData.state === 'ROUND_END' ? roomData.currentRound + 1 : roomData.currentRound} 輪</h2>
+          <h1>{roomData.state === 'TOTAL_END' ? "🏆 最終結算" : roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
+          {roomData.state === 'TOTAL_END' ? (
+            <div style={{margin: '20px 0'}}>
+              {roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
+              <h2 style={{fontSize: '56px', color: COLORS.green, marginTop: '20px'}}>總分：{total}</h2>
+            </div>
+          ) : (
+            <h2 style={{margin: '30px 0', color: COLORS.green, fontSize: '60px'}}>第 {roomData.state === 'ROUND_END' ? roomData.currentRound + 1 : roomData.currentRound} 輪</h2>
+          )}
           <button style={{...startBtn, background: COLORS.green}} onClick={async () => {
             if(roomData.state === 'ROUND_END') await update(ref(db, `rooms/${ROOM_ID}`), { currentRound: roomData.currentRound + 1 });
+            if(roomData.state === 'TOTAL_END') return resetSystem();
             startRound();
-          }}>開始挑戰</button>
+          }}>{roomData.state === 'TOTAL_END' ? "重新開始" : "開始挑戰"}</button>
           <button style={backLink} onClick={resetSystem}>重置回首頁</button>
         </div>
         {volumeComp}
@@ -291,20 +273,20 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           <h3 style={columnTitle}>正確</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '正確' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✓ {h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
             )).reverse()}
           </div>
         </div>
         <div style={centerColumn}>
           <div style={{fontSize: '32px', color: COLORS.red, marginBottom: '10px'}}>{currentQ?.category}</div>
           <h1 style={mainTermStyle(currentQ?.term || "")}>{currentQ?.term}</h1>
-          {isReview && <div style={{color: COLORS.red, fontSize: '28px', marginTop: '30px', fontWeight: 'bold'}}>核對模式：可點擊清單修正</div>}
+          {isReview && <div style={{color: COLORS.red, fontSize: '28px', marginTop: '30px', fontWeight: 'bold'}}>核對模式：點擊清單修正</div>}
         </div>
         <div style={sideColumnRed}>
           <h3 style={columnTitle}>跳過</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '跳過' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✘ {h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
             )).reverse()}
           </div>
         </div>
@@ -314,7 +296,7 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
   );
 }
 
-// --- 3. 控制器組件 ---
+// --- 控制器組件 ---
 function PlayerView({ roomDataRef, volumeComp }) {
   const submit = async (type) => {
     const data = roomDataRef.current;
@@ -347,18 +329,28 @@ function PlayerView({ roomDataRef, volumeComp }) {
   );
 }
 
-// --- 4. 樣式系統 ---
+// --- 樣式系統 ---
 const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box' };
-const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '100%', maxWidth: '500px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
-const responsiveMainTitle = { fontSize: 'clamp(3.5rem, 18vw, 6.5rem)', fontWeight: '900', color: COLORS.red, marginBottom: '30px', letterSpacing: '10px' };
-const subTitle = { fontSize: '1.8rem', marginBottom: '25px', color: COLORS.text, fontWeight: 'bold' };
-const mobileGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '25px' };
+const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '90%', maxWidth: '550px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
 
-const roleBtn = { padding: '15px 10px', fontSize: '1.1rem', borderRadius: '15px', border: `2px solid ${COLORS.gold}`, background: '#fff', cursor: 'pointer', fontWeight: 'bold', color: COLORS.text, fontFamily: FONT_FAMILY };
-const catBtnMobile = { ...roleBtn, fontSize: '1rem', padding: '12px 5px' };
+// 修正後的首頁標題，使用 clamp 縮放
+const responsiveTitle = {
+  fontSize: 'clamp(4rem, 15vw, 8rem)',
+  fontWeight: '900',
+  color: COLORS.red,
+  marginBottom: '30px',
+  letterSpacing: '10px',
+  lineHeight: '1.2'
+};
+
+const subTitle = { fontSize: '2rem', marginBottom: '25px', color: COLORS.text, fontWeight: 'bold' };
+const mobileGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' };
+
+const roleBtn = { padding: '20px', fontSize: '1.4rem', borderRadius: '15px', border: `2px solid ${COLORS.gold}`, background: '#fff', cursor: 'pointer', fontWeight: 'bold', color: COLORS.text, fontFamily: FONT_FAMILY };
+const catBtnMobile = { ...roleBtn, fontSize: '1.2rem' };
 const roleBtnDisabled = { ...roleBtn, background: '#eee', color: '#aaa', cursor: 'not-allowed', border: 'none' };
-const startBtn = { padding: '18px', fontSize: '1.5rem', borderRadius: '20px', border: 'none', background: COLORS.gold, color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', width: '100%' };
-const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1rem', marginTop: '15px' };
+const startBtn = { padding: '20px', fontSize: '1.8rem', borderRadius: '20px', border: 'none', background: COLORS.gold, color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', width: '100%' };
+const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem', marginTop: '15px' };
 const adminEntryBtn = { position: 'absolute', bottom: '20px', left: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.3 };
 
 const gameScreenStyle = { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: COLORS.cream, overflow: 'hidden' };
@@ -381,8 +373,20 @@ const mobileActionBtn = { padding: '25px 0', fontSize: '2rem', borderRadius: '20
 
 const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
 const confirmBtn = { padding: '10px 20px', background: COLORS.gold, border: 'none', borderRadius: '8px', color: COLORS.text, fontWeight: 'bold', cursor: 'pointer' };
-const inputStyle = { padding: '10px', borderRadius: '10px', border: `2px solid ${COLORS.gold}`, width: '100px', textAlign: 'center', fontSize: '1.2rem', fontFamily: FONT_FAMILY };
-const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 0', width: '100%' };
+
+// 設定介面輸入框優化
+const inputStyle = { 
+  padding: '12px', 
+  borderRadius: '10px', 
+  border: `2px solid ${COLORS.gold}`, 
+  width: '120px', 
+  textAlign: 'center', 
+  fontSize: '1.4rem', 
+  fontFamily: FONT_FAMILY,
+  backgroundColor: '#fff',
+  color: COLORS.text
+};
+const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 0', width: '100%', fontSize: '1.2rem', fontWeight: 'bold' };
 
 const volumeBtnStyle = { 
   position: 'absolute', bottom: '20px', right: '20px', width: '60px', height: '60px',
