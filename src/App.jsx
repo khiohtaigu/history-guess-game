@@ -164,8 +164,8 @@ function AdminView({ onBack }) {
   return (
     <div style={lobbyContainer}>
       <div style={glassCard}>
-        <h2 style={{color: COLORS.red}}>⚙️ 題庫管理</h2>
-        <input type="file" accept=".xlsx" onChange={handleFileUpload} style={{margin: '30px 0', width: '100%'}} />
+        <h2>⚙️ 題庫管理</h2>
+        <input type="file" accept=".xlsx" onChange={handleFileUpload} style={{margin: '30px 0'}} />
         <button style={backLink} onClick={onBack}>← 返回</button>
       </div>
     </div>
@@ -209,13 +209,27 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           <h2 style={{...subTitle, color: COLORS.red}}>初始設定</h2>
           <div style={settingRow}>
             <span>總回合數</span>
-            <input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e=>setTempSettings({...tempSettings, rounds: parseInt(e.target.value) || 0})} />
+            <input 
+              type="number" 
+              style={inputStyle} 
+              value={tempSettings.rounds} 
+              onChange={e=>setTempSettings({...tempSettings, rounds: parseInt(e.target.value) || 0})}
+              onFocus={(e) => e.target.select()}
+            />
           </div>
           <div style={settingRow}>
             <span>每輪秒數</span>
-            <input type="number" style={inputStyle} value={tempSettings.time} onChange={e=>setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})} />
+            <input 
+              type="number" 
+              style={inputStyle} 
+              value={tempSettings.time} 
+              onChange={e=>setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})}
+              onFocus={(e) => e.target.select()}
+            />
           </div>
-          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
+          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}>
+            <input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許重複
+          </label>
           <button style={{...startBtn, background: COLORS.green}} onClick={() => update(ref(db, `rooms/${ROOM_ID}`), { state: 'LOBBY', totalRounds: tempSettings.rounds, timePerRound: tempSettings.time, allowDuplicate: tempSettings.dup })}>儲存設定</button>
         </div>
         {volumeComp}
@@ -228,7 +242,7 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
     return (
       <div style={lobbyContainer}>
         <div style={glassCard}>
-          <h1>{roomData.state === 'TOTAL_END' ? "🏆 最終結算" : roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
+          <h1 style={{fontSize: roomData.state === 'TOTAL_END' ? '40px' : '32px'}}>{roomData.state === 'TOTAL_END' ? "🏆 最終結算" : roomData.state === 'ROUND_END' ? `第 ${roomData.currentRound} 輪結束` : "準備就緒"}</h1>
           {roomData.state === 'TOTAL_END' ? (
             <div style={{margin: '20px 0'}}>
               {roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
@@ -239,10 +253,10 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           )}
           <button style={{...startBtn, background: COLORS.green}} onClick={async () => {
             if(roomData.state === 'ROUND_END') await update(ref(db, `rooms/${ROOM_ID}`), { currentRound: roomData.currentRound + 1 });
-            if(roomData.state === 'TOTAL_END') return resetSystem();
+            if(roomData.state === 'TOTAL_END') return resetToHome();
             startRound();
           }}>{roomData.state === 'TOTAL_END' ? "重新開始" : "開始挑戰"}</button>
-          <button style={backLink} onClick={resetSystem}>重置回首頁</button>
+          <button style={backLink} onClick={resetToHome}>重置回首頁</button>
         </div>
         {volumeComp}
       </div>
@@ -266,14 +280,14 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           const newUsedIds = [...(roomData.usedIds || []), ...roomData.queue.slice(0, roomData.currentIndex).map(q => q.id)];
           await update(ref(db, `rooms/${ROOM_ID}`), { state: roomData.currentRound >= roomData.totalRounds ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds });
         }}>確認結算 ➔</button>}
-        <button style={resetSmallBtn} onClick={resetSystem}>RESET</button>
+        <button style={resetSmallBtn} onClick={resetToHome}>RESET</button>
       </div>
       <div style={mainContent}>
         <div style={sideColumnRed}>
           <h3 style={columnTitle}>正確</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '正確' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✓ {h.q}</div>
             )).reverse()}
           </div>
         </div>
@@ -286,7 +300,7 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           <h3 style={columnTitle}>跳過</h3>
           <div style={listScroll}>
             {[...(roomData.history || [])].map((h, i) => h.type === '跳過' && (
-              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>{h.q}</div>
+              <div key={i} style={listItemWhite} onClick={() => toggleItem(i)}>✘ {h.q}</div>
             )).reverse()}
           </div>
         </div>
@@ -331,11 +345,11 @@ function PlayerView({ roomDataRef, volumeComp }) {
 
 // --- 樣式系統 ---
 const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box' };
-const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '90%', maxWidth: '550px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
+const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '95%', maxWidth: '600px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
 
-// 修正後的首頁標題，使用 clamp 縮放
+// 修正後的標題，縮小範圍
 const responsiveTitle = {
-  fontSize: 'clamp(4rem, 15vw, 8rem)',
+  fontSize: 'clamp(2.5rem, 10vw, 5.5rem)',
   fontWeight: '900',
   color: COLORS.red,
   marginBottom: '30px',
@@ -359,8 +373,13 @@ const infoText = { fontSize: '26px', fontWeight: 'bold' };
 const mainContent = { display: 'flex', flex: 1, overflow: 'hidden' };
 const sideColumnRed = { width: '15%', padding: '15px', background: COLORS.red, display: 'flex', flexDirection: 'column', color: '#fff' };
 const columnTitle = { fontSize: '22px', borderBottom: '2px solid rgba(255,255,255,0.3)', paddingBottom: '10px', textAlign: 'center', fontWeight: 'bold' };
-const centerColumn = { width: '70%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px' };
-const mainTermStyle = (text) => ({ fontSize: text.length > 8 ? 'min(7vw, 90px)' : text.length > 5 ? 'min(10vw, 120px)' : 'min(14vw, 180px)', whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0, textAlign: 'center' });
+const centerColumn = { width: '70%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 50px', boxSizing: 'border-box' };
+
+const mainTermStyle = (text) => ({ 
+  fontSize: text.length > 8 ? 'min(7vw, 90px)' : text.length > 5 ? 'min(10vw, 120px)' : 'min(14vw, 180px)', 
+  whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0, textAlign: 'center' 
+});
+
 const listScroll = { flex: 1, overflowY: 'auto' };
 const listItemWhite = { fontSize: '22px', padding: '10px', margin: '8px 0', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', textAlign: 'left', fontWeight: 'bold' };
 
@@ -371,22 +390,23 @@ const mobileTermText = { fontSize: 'clamp(2rem, 12vw, 3.5rem)', color: COLORS.te
 const mobileButtonArea = { display: 'flex', flexDirection: 'column', gap: '15px', paddingBottom: '40px' };
 const mobileActionBtn = { padding: '25px 0', fontSize: '2rem', borderRadius: '20px', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer' };
 
-const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
 const confirmBtn = { padding: '10px 20px', background: COLORS.gold, border: 'none', borderRadius: '8px', color: COLORS.text, fontWeight: 'bold', cursor: 'pointer' };
+const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
 
-// 設定介面輸入框優化
+// 優化後的輸入框樣式，確保點擊容易
 const inputStyle = { 
   padding: '12px', 
   borderRadius: '10px', 
   border: `2px solid ${COLORS.gold}`, 
-  width: '120px', 
+  width: '150px', 
   textAlign: 'center', 
-  fontSize: '1.4rem', 
+  fontSize: '1.5rem', 
   fontFamily: FONT_FAMILY,
   backgroundColor: '#fff',
-  color: COLORS.text
+  color: COLORS.text,
+  cursor: 'text' // 強制顯示文字游標
 };
-const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '15px 0', width: '100%', fontSize: '1.2rem', fontWeight: 'bold' };
+const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
 
 const volumeBtnStyle = { 
   position: 'absolute', bottom: '20px', right: '20px', width: '60px', height: '60px',
