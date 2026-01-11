@@ -129,7 +129,7 @@ export default function App() {
     <div style={{fontFamily: FONT_FAMILY, color: COLORS.text, overflowX: 'hidden'}}>
       {/* 音樂檔案路徑說明：你可以把檔案放在 public/bgm.mp3，然後把 src 改成 "/bgm.mp3" */}
       <audio ref={audioRef} loop crossOrigin="anonymous">
-        <source src="https://cdn.pixabay.com/audio/2024/05/22/audio_349d5c464e.mp3" type="audio/mpeg" />
+        <source src="/bgm.mp3" type="audio/mpeg" />
       </audio>
       {renderContent()}
     </div>
