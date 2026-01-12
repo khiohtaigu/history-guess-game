@@ -4,13 +4,11 @@ import { db } from './firebaseConfig';
 import { ref, set, onValue, update, get, runTransaction } from "firebase/database";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 
-const ROOM_ID_PREFIX = "ROOM_";
 const COLORS = { cream: '#FFFDE7', gold: '#FCE38A', green: '#95C173', red: '#950707', text: '#2D2926' };
 const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU", "serif"';
 const iconFilterRed = 'invert(11%) sepia(87%) saturate(6011%) hue-rotate(354deg) brightness(85%) contrast(116%)';
 const iconFilterGold = 'invert(88%) sepia(21%) saturate(769%) hue-rotate(344deg) brightness(102%) contrast(101%)';
 
-// --- 版權聲明 (固定最底層) ---
 const CopyrightFooter = () => (
   <div style={footerStyle}>© 2025 你講我臆ＸKhiohtaigu. All Rights Reserved.</div>
 );
@@ -41,12 +39,11 @@ export default function App() {
     return auth.onAuthStateChanged(u => setUser(u));
   }, [auth]);
 
-  // 監聽題庫分類 (加入防崩潰保護)
   useEffect(() => {
     onValue(ref(db, 'question_pool'), (snapshot) => {
-      const pool = snapshot.val() || {};
-      const poolArray = Array.isArray(pool) ? pool : Object.values(pool);
-      if (poolArray.length > 0) {
+      if (snapshot.exists()) {
+        const pool = snapshot.val();
+        const poolArray = Array.isArray(pool) ? pool : Object.values(pool);
         setAvailableCats([...new Set(poolArray.map(item => String(item.book || "").trim()))]);
       }
     });
@@ -93,10 +90,7 @@ export default function App() {
         <div style={lobbyContainer}>
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitle}>你講我臆</h1></div>
-            <button style={startBtn} onClick={() => {
-                setView('HOME');
-                if (audioRef.current) audioRef.current.play().catch(()=>{});
-            }}>點擊進入 ➔</button>
+            <button style={startBtn} onClick={() => { setView('HOME'); if (audioRef.current) audioRef.current.play().catch(()=>{}); }}>點擊進入 ➔</button>
           </div>
           <CopyrightFooter />
         </div>
@@ -106,18 +100,10 @@ export default function App() {
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitleSmall}>你講我臆</h1></div>
             <div style={mobileVerticalGrid}>
-                <button style={startBtn} onClick={handleTeacherStart}>
-                  💻 {user ? "投影" : "投影 (登入)"}
-                </button>
-                <button style={{...startBtn, background: COLORS.green}} onClick={() => setView('JOIN_ROOM')}>
-                  📱 控制器 (輸入代碼)
-                </button>
+                <button style={startBtn} onClick={handleTeacherStart}>💻 {user ? "投影" : "投影 (登入)"}</button>
+                <button style={{...startBtn, background: COLORS.green}} onClick={() => setView('JOIN_ROOM')}>📱 控制器 (輸入代碼)</button>
             </div>
-            {user && (
-              <p style={{marginTop: '20px', fontSize: '16px'}}>
-                {user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline', marginLeft:'10px'}} onClick={()=>signOut(auth)}>登出</span>
-              </p>
-            )}
+            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline', marginLeft:'10px'}} onClick={()=>signOut(auth)}>登出</span></p>}
             <button style={backLink} onClick={() => setView('ENTRY')}>← 返回</button>
           </div>
           <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ <span style={{fontSize:'16px'}}>題庫匯入</span></button>
@@ -162,7 +148,7 @@ export default function App() {
         </div>
       );
       case 'JOIN_ROOM': return <JoinRoomView setRoomId={setRoomId} setView={setView} resetToHome={() => setView('HOME')} />;
-      case 'PROJECTOR_SETTINGS': return <ProjectorSettings roomId={roomId} setView={setView} />;
+      case 'PROJECTOR_SETTINGS': return <ProjectorSettings roomId={roomId} roomData={roomData} setView={setView} />;
       case 'PROJECTOR_GAME': return <ProjectorGameView roomId={roomId} roomData={roomData} resetToHome={resetToHome} setView={setView} totalSessions={totalSessions} />;
       case 'PLAYER': return <PlayerView roomId={roomId} roomData={roomData} resetToHome={resetToHome} setView={setView} />;
       default: return null;
@@ -178,7 +164,7 @@ export default function App() {
   );
 }
 
-// --- 控制器端：輸入代碼 ---
+// --- 輸入代碼 ---
 function JoinRoomView({ setRoomId, setView, resetToHome }) {
   const [code, setCode] = useState("");
   const handleJoin = async () => {
@@ -197,16 +183,17 @@ function JoinRoomView({ setRoomId, setView, resetToHome }) {
   );
 }
 
-// --- 投影幕端：初始設定 ---
-function ProjectorSettings({ roomId, setView }) {
+// --- 初始設定 ---
+function ProjectorSettings({ roomId, roomData, setView }) {
   const [rounds, setRounds] = useState(3);
   const [time, setTime] = useState(180);
   const [dup, setDup] = useState(false);
 
+  // 修正：儲存時確保讀取 roomData 現有的範圍，不使用 localStorage
   const saveAndStart = async () => {
-    const cat = localStorage.getItem('temp_cat') || "全範圍";
+    const currentCat = roomData?.category || "全範圍";
     await update(ref(db, `rooms/${roomId}`), {
-      state: 'LOBBY', totalRounds: rounds, timePerRound: time, allowDuplicate: dup, category: cat,
+      state: 'LOBBY', totalRounds: rounds, timePerRound: time, allowDuplicate: dup, category: currentCat,
       currentRound: 1, score: 0, roundScores: [], usedIds: [], history: []
     });
     setView('PROJECTOR_GAME');
@@ -223,14 +210,16 @@ function ProjectorSettings({ roomId, setView }) {
         <div style={settingRow}><span>每輪秒數</span>
           <input type="number" style={inputStyle} value={time} onChange={e => setTime(parseInt(e.target.value) || 0)} onFocus={e => e.target.select()} />
         </div>
-        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複</label>
+        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem', cursor: 'pointer'}}>
+          <input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複
+        </label>
       </div>
       <button style={startBtn} onClick={saveAndStart}>儲存設定並開始</button>
     </div><CopyrightFooter /></div>
   );
 }
 
-// --- 投影幕端：遊戲主畫面 ---
+// --- 投影幕遊戲主畫面 ---
 function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessions }) {
   useEffect(() => {
     let timer;
@@ -248,6 +237,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
     runTransaction(ref(db, 'stats/totalSessions'), (c) => (c || 0) + 1);
     const snapshot = await get(ref(db, 'question_pool'));
     const pool = Object.values(snapshot.val() || {});
+    // 精準篩選：依據目前房間設定的分類抓題
     let filtered = roomData.category === '全範圍' ? pool : pool.filter(q => q.book === roomData.category);
     if (!roomData.allowDuplicate) filtered = filtered.filter(q => !(roomData.usedIds || []).includes(q.id));
     if (filtered.length === 0) return alert("題目已用完！");
@@ -259,7 +249,6 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
     const newScores = [...(roomData.roundScores || []), { round: roomData.currentRound, score: roomData.score }];
     const newUsedIds = [...(roomData.usedIds || []), ...(roomData.queue?.slice(0, roomData.currentIndex).map(q => q.id) || [])];
     const isGameOver = roomData.currentRound >= roomData.totalRounds;
-    
     const updates = { state: isGameOver ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds, isPaused: false };
     if (!isGameOver) updates.currentRound = roomData.currentRound + 1;
     await update(ref(db, `rooms/${roomId}`), updates);
@@ -273,7 +262,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
           {roomData.state === 'TOTAL_END' ? (
             <div>
               <h1 style={{color:COLORS.red, fontSize: '3rem', marginBottom: '5px'}}>🏆 最終結算</h1>
-              <div style={{margin: '10px 0', maxHeight: '200px', overflowY: 'auto'}}>
+              <div style={{margin: '10px 0', maxHeight: '250px', overflowY: 'auto'}}>
                  {roomData.roundScores?.map((r,i)=>{
                    const s = r.score < 10 ? `\u00A0${r.score}` : r.score;
                    return <div key={i} style={{fontSize:'32px', fontWeight:'bold', margin: '4px 0'}}>第 {r.round} 輪：{s} 分</div>
@@ -282,14 +271,15 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
               <h2 style={{fontSize:'56px', color:COLORS.green, borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px'}}>總分：{total}</h2>
             </div>
           ) : (
-            <div style={{margin: '30px 0'}}>
-                <h1 style={{fontSize: '60px', color: COLORS.green, margin: 0, lineHeight: 1.2}}>準備就緒</h1>
+            <div style={{margin: '40px 0'}}>
+                <h1 style={{fontSize: '56px', color: COLORS.green, margin: 0, lineHeight: 1.2}}>準備就緒</h1>
+                {/* 修正：分行並變小 */}
                 <h2 style={{fontSize: '32px', color: COLORS.text, marginTop: '10px', fontWeight: 'normal'}}>(第 {roomData.currentRound} 輪)</h2>
             </div>
           )}
           <div style={mobileVerticalGrid}>
             <button style={startBtn} onClick={roomData.state === 'TOTAL_END' ? (()=>update(ref(db,`rooms/${roomId}`),{state:'SETTINGS'})) : startRound}>
-               {roomData.state === 'TOTAL_END' ? "重新遊戲" : "開始挑戰"}
+               {roomData.state === 'TOTAL_END' ? "重新設定" : "開始挑戰"}
             </button>
             {roomData.state === 'TOTAL_END' && <button style={{...startBtn, background: COLORS.green}} onClick={()=>{update(ref(db,`rooms/${roomId}`),{state:'SETTINGS'});setView('CATEGORY')}}>重選範圍</button>}
             <button style={backLinkButton} onClick={resetToHome}>回首頁</button>
@@ -326,6 +316,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
           : <>
             <div style={{fontSize:'32px', color:COLORS.red, marginBottom:'10px', fontWeight:'bold'}}>{currentQ?.category}</div>
             <div style={mainTermContainer}><h1 style={mainTermStylePC(currentQ?.term || "")}>{currentQ?.term}</h1></div>
+            {isReview && <div style={{color:COLORS.red, fontSize:'28px', marginTop:'30px', fontWeight:'bold'}}>核對模式：可點擊清單修正</div>}
           </>}
         </div>
         <div style={sideColumnPC}><h3 style={columnTitlePC}>跳過</h3><div style={listScroll}>{(roomData.history || []).map((h, i) => h.type === '跳過' && (<div key={i} style={listItemWhitePC} onClick={() => updateHistory(roomId, roomData, i)}>✘ {h.q}</div>)).reverse()}</div></div>
@@ -390,14 +381,14 @@ function AdminView({ onBack }) {
         const json = XLSX.utils.sheet_to_json(workbook.Sheets[n]);
         all = [...all, ...json.map(i => ({ id: i['序號']||Math.random(), term: String(i['名詞']||''), book: String(i['分冊']||'').trim() }))];
       });
-      set(ref(db, 'question_pool'), all).then(() => alert("匯入成功！"));
+      set(ref(db, 'question_pool'), all).then(() => alert("題庫匯入成功！"));
     };
     reader.readAsArrayBuffer(file);
   };
   return <div style={lobbyContainer}><div style={glassCard}><h2>題庫管理</h2><input type="file" onChange={handleFileUpload}/><br/><button style={backLinkButton} onClick={onBack}>← 返回</button></div></div>;
 }
 
-// --- 樣式設定 (修正重疊與輸入) ---
+// --- 樣式設定 ---
 const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:COLORS.cream, position:'relative', padding:'40px 20px 120px 20px', boxSizing:'border-box', textAlign:'center' };
 const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'550px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box', marginBottom: '20px' };
 const titleContainer = { width:'100%', overflow:'hidden', display:'flex', justifyContent:'center', marginBottom:'30px' };
