@@ -4,7 +4,6 @@ import { db } from './firebaseConfig';
 import { ref, set, onValue, update, get, runTransaction } from "firebase/database";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
 
-const ROOM_ID_PREFIX = "ROOM_";
 const COLORS = { cream: '#FFFDE7', gold: '#FCE38A', green: '#95C173', red: '#950707', text: '#2D2926' };
 const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU", "serif"';
 const iconFilterRed = 'invert(11%) sepia(87%) saturate(6011%) hue-rotate(354deg) brightness(85%) contrast(116%)';
@@ -53,8 +52,9 @@ export default function App() {
 
   useEffect(() => {
     if (!roomId) return;
-    const roomRef = ref(db, `rooms/${roomId}`);
-    const unsub = onValue(roomRef, (snapshot) => { setRoomData(snapshot.val()); });
+    const unsub = onValue(ref(db, `rooms/${roomId}`), (snapshot) => {
+      setRoomData(snapshot.val());
+    });
     return () => unsub();
   }, [roomId]);
 
@@ -94,6 +94,16 @@ export default function App() {
       setView('HOME');
       setRoomId("");
       setRoomData(null);
+    }
+  };
+
+  // 投影幕重新啟動新遊戲 (保留房間號)
+  const handleProjectorNewGame = async () => {
+    if (roomId) {
+      await update(ref(db, `rooms/${roomId}`), {
+        state: 'SETTINGS', currentRound: 1, score: 0, isPaused: false, roundScores: [], usedIds: []
+      });
+      setView('CATEGORY');
     }
   };
 
@@ -151,10 +161,22 @@ export default function App() {
           </div>
         </div>
       );
+      case 'ROLE': return (
+        <div style={lobbyContainer}>
+          <div style={glassCard}>
+            <h2 style={subTitle}>選擇身分</h2>
+            <div style={mobileVerticalGrid}>
+              <button style={roleBtnCard} onClick={createRoom}><span style={iconLarge}>💻</span> 我是投影幕 (新房間)</button>
+              <button style={roleBtnCard} onClick={() => setView('JOIN_ROOM')}><span style={iconLarge}>📱</span> 我是控制器 (加入)</button>
+            </div>
+            <button style={backLink} onClick={() => setView('CATEGORY')}>← 返回</button>
+          </div>
+        </div>
+      );
       case 'JOIN_ROOM': return <JoinRoomView setRoomId={setRoomId} setView={setView} />;
       case 'PROJECTOR_SETTINGS': return <ProjectorSettings roomId={roomId} setView={setView} />;
-      case 'PROJECTOR_GAME': return <ProjectorGameView roomId={roomId} roomData={roomData} resetToHome={resetToHome} totalSessions={totalSessions} />;
-      case 'PLAYER': return <PlayerView roomId={roomId} roomData={roomData} resetSystem={resetToHome} />;
+      case 'PROJECTOR_GAME': return <ProjectorGameView roomId={roomId} roomData={roomData} resetToHome={resetToHome} handleNewGame={handleProjectorNewGame} totalSessions={totalSessions} />;
+      case 'PLAYER': return <PlayerView roomId={roomId} roomData={roomData} setView={setView} resetToHome={resetToHome} />;
       default: return null;
     }
   };
@@ -168,7 +190,7 @@ export default function App() {
   );
 }
 
-// --- 輔助組件 ---
+// --- 控制器端：輸入代碼 ---
 function JoinRoomView({ setRoomId, setView }) {
   const [code, setCode] = useState("");
   const handleJoin = async () => {
@@ -187,6 +209,7 @@ function JoinRoomView({ setRoomId, setView }) {
   );
 }
 
+// --- 投影幕端：初始設定 ---
 function ProjectorSettings({ roomId, setView }) {
   const [rounds, setRounds] = useState(3);
   const [time, setTime] = useState(180);
@@ -215,7 +238,7 @@ function ProjectorSettings({ roomId, setView }) {
 }
 
 // --- 投影幕端：遊戲主畫面 ---
-function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
+function ProjectorGameView({ roomId, roomData, resetToHome, handleNewGame, totalSessions }) {
   useEffect(() => {
     let timer;
     if (roomData?.state === 'PLAYING' && roomData.timeLeft > 0 && !roomData.isPaused) {
@@ -226,7 +249,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
     return () => clearInterval(timer);
   }, [roomId, roomData?.state, roomData?.timeLeft, roomData?.isPaused]);
 
-  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料同步中...</h2></div>;
+  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料讀取中...</h2></div>;
 
   const startRound = async () => {
     runTransaction(ref(db, 'stats/totalSessions'), (c) => (c || 0) + 1);
@@ -244,16 +267,13 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
     const newUsedIds = [...(roomData.usedIds || []), ...(roomData.queue?.slice(0, roomData.currentIndex).map(q => q.id) || [])];
     const isGameOver = roomData.currentRound >= roomData.totalRounds;
     
-    // --- 修正點 1: 在結算瞬間增加回合數 ---
     const updates = { 
-      state: isGameOver ? 'TOTAL_END' : 'ROUND_END', 
-      roundScores: newScores, 
-      usedIds: newUsedIds, 
-      isPaused: false 
+        state: isGameOver ? 'TOTAL_END' : 'ROUND_END', 
+        roundScores: newScores, 
+        usedIds: newUsedIds, 
+        isPaused: false 
     };
-    if (!isGameOver) {
-      updates.currentRound = roomData.currentRound + 1;
-    }
+    if (!isGameOver) updates.currentRound = roomData.currentRound + 1;
     await update(ref(db, `rooms/${roomId}`), updates);
   };
 
@@ -267,17 +287,19 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
               <h1 style={{color:COLORS.red, fontSize: '3.5rem'}}>🏆 最終結算</h1>
               <div style={{margin: '30px 0'}}>
                  {roomData.roundScores?.map((r,i)=>(
-                   <div key={i} style={{fontSize:'36px', fontWeight:'bold', margin: '10px 0'}}>第 {r.round} 輪：{r.score} 分</div>
+                   <div key={i} style={{fontSize:'32px', fontWeight:'bold', margin: '15px 0'}}>第 {r.round} 輪：{r.score} 分</div>
                  ))}
               </div>
               <h2 style={{fontSize:'64px', color:COLORS.green, borderTop: '2px solid #eee', paddingTop: '20px'}}>總分：{total}</h2>
             </div>
-          ) : <h2 style={{color: COLORS.green, fontSize:'60px', margin: '40px 0'}}>準備就緒 (第 {roomData.currentRound} 輪)</h2>}
+          ) : <h2 style={{color:COLORS.green, fontSize:'60px', margin: '40px 0'}}>準備就緒 (第 {roomData.currentRound} 輪)</h2>}
           
-          <button style={startBtn} onClick={roomData.state === 'TOTAL_END' ? resetToHome : startRound}>
-             {roomData.state === 'TOTAL_END' ? "回首頁" : "開始挑戰"}
-          </button>
-          {roomData.state !== 'TOTAL_END' && <button style={backLink} onClick={resetToHome}>重置回首頁</button>}
+          <div style={mobileVerticalGrid}>
+            <button style={startBtn} onClick={roomData.state === 'TOTAL_END' ? handleNewGame : startRound}>
+               {roomData.state === 'TOTAL_END' ? "重新遊戲" : "開始挑戰"}
+            </button>
+            <button style={{...backLink, fontSize: '1.5rem'}} onClick={resetToHome}>回首頁</button>
+          </div>
       </div><CopyrightFooter /></div>
     );
   }
@@ -295,8 +317,8 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
           <img src="/time.png" alt="time" style={timerIconStyle} />
           <span>{roomData.timeLeft}s</span>
         </div>
-        <div style={{...infoText, color:COLORS.green, minWidth:'150px'}}>SCORE: {roomData.score}</div>
-        <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+        <div style={{...infoText, color: COLORS.green, minWidth: '150px'}}>SCORE: {roomData.score}</div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
           {isReview && <button style={confirmBtn} onClick={confirmResult}>確認結算 ➔</button>}
           {!isReview && <button onClick={()=>update(ref(db, `rooms/${roomId}`), {isPaused: !roomData.isPaused})} style={pauseIconBtn}><img src="/pause.png" alt="pause" style={{height:'28px', filter:iconFilterGold, opacity:roomData.isPaused?0.5:1}}/></button>}
           <button style={resetSmallBtn} onClick={resetToHome}>RESET</button>
@@ -327,7 +349,7 @@ const updateHistory = (rid, data, idx) => {
 };
 
 // --- 控制器端 ---
-function PlayerView({ roomId, roomData, resetSystem }) {
+function PlayerView({ roomId, roomData, setView, resetToHome }) {
   const submit = async (type) => {
     if (!roomData || roomData.state !== 'PLAYING' || roomData.isPaused) return;
     const nextIdx = roomData.currentIndex + 1;
@@ -337,7 +359,14 @@ function PlayerView({ roomId, roomData, resetSystem }) {
   };
   if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中...</h2></div>;
   if (roomData.state !== 'PLAYING') return (
-    <div style={layoutStyleMobile}><h2 style={{color:COLORS.red}}>⏳ 等待開始</h2><p>房號：{roomId}</p><p>請等待投影幕端啟動</p><button style={backLink} onClick={resetSystem}>返回首頁</button></div>
+    <div style={layoutStyleMobile}>
+        <h2 style={{color:COLORS.red}}>{roomData.state === 'TOTAL_END' ? "🏆 最終結算中" : "⏳ 等待開始"}</h2>
+        <p>房號：{roomId}</p>
+        <div style={mobileVerticalGrid}>
+            <button style={startBtn} onClick={() => setView('JOIN_ROOM')}>重新遊戲</button>
+            <button style={backLink} onClick={resetToHome}>回首頁</button>
+        </div>
+    </div>
   );
   if (roomData.isPaused) return <div style={layoutStyleMobile}><h1 style={{color:COLORS.red, fontSize:'3rem'}}>暫停中</h1></div>;
   const currentQ = roomData.queue?.[roomData.currentIndex];
@@ -376,15 +405,15 @@ function AdminView({ onBack }) {
   return <div style={lobbyContainer}><div style={glassCard}><h2>題庫管理</h2><input type="file" onChange={handleFileUpload}/><br/><button style={backLink} onClick={onBack}>← 返回</button></div></div>;
 }
 
-// --- 樣式系統 ---
+// --- 樣式設定 ---
 const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', background:COLORS.cream, position:'relative', padding:'20px', boxSizing:'border-box', textAlign:'center' };
 const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'500px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box' };
 const titleContainer = { width:'100%', overflow:'hidden', display:'flex', justifyContent:'center', marginBottom:'30px' };
 const responsiveTitle = { fontSize:'clamp(2.5rem, 10vw, 5rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
 const subTitle = { fontSize:'2rem', marginBottom:'25px', color:COLORS.text, fontWeight:'bold' };
 const mobileGrid = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px', marginBottom:'25px' };
-const mobileVerticalGrid = { display:'flex', flexDirection:'column', gap:'15px', marginBottom:'25px' };
-const roleBtnCard = { display:'flex', alignItems:'center', padding:'20px', fontSize:'1.4rem', borderRadius:'20px', border:`2px solid ${COLORS.gold}`, background:'#fff', cursor:'pointer', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
+const mobileVerticalGrid = { display:'flex', flexDirection:'column', gap:'15px', marginBottom:'25px', width: '100%' };
+const roleBtnCard = { display:'flex', alignItems:'center', padding:'20px', fontSize:'1.4rem', borderRadius:'20px', border:`2px solid ${COLORS.gold}`, background:'#fff', cursor:'pointer', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY, boxShadow: '0 4px 10px rgba(0,0,0,0.05)' };
 const iconLarge = { fontSize:'2.5rem', marginRight:'15px' };
 const roleBtnDisabled = { ...roleBtnCard, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
 const catBtnMobile = { padding:'15px', fontSize:'1.2rem', borderRadius:'15px', border:`2px solid ${COLORS.gold}`, background:'#fff', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
@@ -410,7 +439,7 @@ const mobileButtonArea = { display:'flex', flexDirection:'column', gap:'15px', m
 const mobileActionBtn = { padding:'25px 0', fontSize:'2.5rem', borderRadius:'20px', border:'none', color:'#fff', fontWeight:'bold', cursor:'pointer', boxShadow:'0 5px 15px rgba(0,0,0,0.1)' };
 const volumeBtnStyle = { position:'fixed', bottom:'15px', right:'15px', width: '55px', height: '55px', background:'white', border:`2px solid ${COLORS.gold}`, borderRadius:'50%', cursor:'pointer', padding:'10px', zIndex:2000, boxShadow:'0 4px 10px rgba(0,0,0,0.1)' };
 const pauseIconBtn = { background:'none', border:'none', cursor:'pointer' };
-const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '4px', cursor: 'pointer' };
+const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#888', borderRadius: '4px', cursor: 'pointer' };
 const confirmBtn = { padding:'10px 20px', background:COLORS.gold, border: 'none', borderRadius: '8px', color: COLORS.text, fontWeight: 'bold', cursor: 'pointer' };
 const inputStyle = { padding: '12px', borderRadius: '10px', border: `2px solid ${COLORS.gold}`, width: '150px', textAlign: 'center', fontSize: '1.8rem', backgroundColor: '#fff', color: COLORS.text };
 const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
