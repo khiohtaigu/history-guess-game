@@ -10,7 +10,7 @@ const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU
 const iconFilterRed = 'invert(11%) sepia(87%) saturate(6011%) hue-rotate(354deg) brightness(85%) contrast(116%)';
 const iconFilterGold = 'invert(88%) sepia(21%) saturate(769%) hue-rotate(344deg) brightness(102%) contrast(101%)';
 
-// --- 版權聲明組件 ---
+// --- 版權聲明 ---
 const CopyrightFooter = () => (
   <div style={footerStyle}>© 2025 你講我臆ＸKhiohtaigu. All Rights Reserved.</div>
 );
@@ -59,13 +59,20 @@ export default function App() {
     }
   }, [isMuted, roomData?.isPaused]);
 
-  const handleStartApp = () => {
+  // 老師登入邏輯
+  const handleTeacherStart = () => {
     if (!user) {
       const provider = new GoogleAuthProvider();
-      signInWithPopup(auth, provider).then(() => setView('SUBJECT')).catch(err => alert("登入失敗: " + err.message));
+      signInWithPopup(auth, provider).then(() => setView('SUBJECT')).catch(err => alert("登入失敗"));
     } else {
       setView('SUBJECT');
     }
+    if (audioRef.current) audioRef.current.play().catch(() => {});
+  };
+
+  // 學生進入邏輯 (無需登入)
+  const handleStudentStart = () => {
+    setView('JOIN_ROOM');
     if (audioRef.current) audioRef.current.play().catch(() => {});
   };
 
@@ -91,6 +98,12 @@ export default function App() {
     }
   };
 
+  const VolumeControl = () => (
+    <button onClick={() => setIsMuted(!isMuted)} style={volumeBtnStyle}>
+      <img src="/music.png" alt="music" style={{ width: '100%', height: '100%', filter: isMuted ? 'grayscale(1)' : iconFilterRed, opacity: isMuted ? 0.3 : 1 }} />
+    </button>
+  );
+
   const renderContent = () => {
     switch (view) {
       case 'ADMIN': return <AdminView onBack={() => setView('HOME')} />;
@@ -98,8 +111,11 @@ export default function App() {
         <div style={lobbyContainer}>
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitle}>你講我臆</h1></div>
-            <button style={startBtn} onClick={handleStartApp}>{user ? "進入遊戲 ➔" : "Google 登入開始"}</button>
-            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>歡迎，{user.displayName} <span style={{cursor:'pointer', color:COLORS.red}} onClick={()=>signOut(auth)}>(登出)</span></p>}
+            <div style={mobileVerticalGrid}>
+                <button style={startBtn} onClick={handleTeacherStart}>💻 我是老師 (需登入)</button>
+                <button style={{...startBtn, background: COLORS.green}} onClick={handleStudentStart}>📱 我是學生 (輸入代碼)</button>
+            </div>
+            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>老師已登入：{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline'}} onClick={()=>signOut(auth)}>登出</span></p>}
           </div>
           <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ <span style={{fontSize:'16px'}}>題庫匯入</span></button>
           <CopyrightFooter />
@@ -128,23 +144,11 @@ export default function App() {
                 const isEnabled = cat === "全範圍" ? availableCats.length > 0 : availableCats.includes(cat);
                 return (
                   <button key={cat} style={isEnabled ? catBtnMobile : catBtnDisabled} disabled={!isEnabled}
-                    onClick={() => { localStorage.setItem('temp_cat', cat); setView('ROLE'); }}>{cat}</button>
+                    onClick={() => { localStorage.setItem('temp_cat', cat); createRoom(); }}>{cat}</button>
                 );
               })}
             </div>
             <button style={backLink} onClick={() => setView('SUBJECT')}>← 返回</button>
-          </div>
-        </div>
-      );
-      case 'ROLE': return (
-        <div style={lobbyContainer}>
-          <div style={glassCard}>
-            <h2 style={subTitle}>選擇身分</h2>
-            <div style={mobileVerticalGrid}>
-              <button style={roleBtnCard} onClick={createRoom}><span style={iconLarge}>💻</span> 我是投影幕 (新房間)</button>
-              <button style={roleBtnCard} onClick={() => setView('JOIN_ROOM')}><span style={iconLarge}>📱</span> 我是控制器 (加入)</button>
-            </div>
-            <button style={backLink} onClick={() => setView('CATEGORY')}>← 返回</button>
           </div>
         </div>
       );
@@ -167,21 +171,21 @@ export default function App() {
   );
 }
 
-// --- 控制器端：輸入代碼 ---
+// --- 控制器端：輸入代碼 (無需登入) ---
 function JoinRoomView({ setRoomId, setView }) {
   const [code, setCode] = useState("");
   const handleJoin = async () => {
     if (code.length < 4) return;
     const s = await get(ref(db, `rooms/${code}`));
     if (s.exists()) { setRoomId(code); setView('PLAYER'); }
-    else alert("找不到該房間！");
+    else alert("找不到該房間，請重新確認代碼！");
   };
   return (
     <div style={lobbyContainer}><div style={glassCard}>
-      <h2 style={subTitle}>輸入 4 碼房間代碼</h2>
-      <input type="number" style={{...inputStyle, width:'200px', fontSize:'3rem', margin:'30px 0'}} value={code} onChange={e=>setCode(e.target.value)} onFocus={e=>e.target.select()} />
+      <h2 style={subTitle}>輸入投影幕上的 4 碼代碼</h2>
+      <input type="number" style={{...inputStyle, width:'220px', fontSize:'3.5rem', margin:'30px 0'}} value={code} onChange={e=>setCode(e.target.value)} onFocus={e=>e.target.select()} />
       <button style={startBtn} onClick={handleJoin}>進入挑戰 ➔</button>
-      <button style={backLink} onClick={()=>setView('ROLE')}>← 返回</button>
+      <button style={backLink} onClick={()=>setView('HOME')}>← 返回</button>
     </div></div>
   );
 }
@@ -202,14 +206,14 @@ function ProjectorSettings({ roomId, setView }) {
 
   return (
     <div style={lobbyContainer}><div style={glassCard}>
-      <h1 style={{color: COLORS.red, fontSize:'4rem', margin:0}}>{roomId}</h1>
-      <p>請學生輸入以上代碼加入</p>
+      <h1 style={{color: COLORS.red, fontSize:'4.5rem', margin:0}}>{roomId}</h1>
+      <p style={{fontSize: '1.2rem', color: '#666'}}>請學生在手機輸入此代碼加入</p>
       <div style={{margin:'30px 0', borderTop:'1px solid #eee', paddingTop:'20px'}}>
         <div style={settingRow}><span>總回合數</span><input type="number" style={inputStyle} value={rounds} onChange={e=>setRounds(parseInt(e.target.value)||0)} onFocus={e=>e.target.select()} /></div>
         <div style={settingRow}><span>每輪秒數</span><input type="number" style={inputStyle} value={time} onChange={e=>setTime(parseInt(e.target.value)||0)} onFocus={e=>e.target.select()} /></div>
-        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem'}}><input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複</label>
+        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem', cursor:'pointer'}}><input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複</label>
       </div>
-      <button style={startBtn} onClick={saveAndStart}>儲存設定 ➔</button>
+      <button style={startBtn} onClick={saveAndStart}>儲存設定並開始</button>
     </div></div>
   );
 }
@@ -226,14 +230,14 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
     return () => clearInterval(timer);
   }, [roomId, roomData?.state, roomData?.timeLeft, roomData?.isPaused]);
 
-  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料讀取中...</h2></div>;
+  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料同步中...</h2></div>;
 
   const startRound = async () => {
     const snapshot = await get(ref(db, 'question_pool'));
     const pool = Object.values(snapshot.val() || {});
     let filtered = roomData.category === '全範圍' ? pool : pool.filter(q => q.book === roomData.category);
     if (!roomData.allowDuplicate) filtered = filtered.filter(q => !(roomData.usedIds || []).includes(q.id));
-    if (filtered.length === 0) return alert("該範圍題目已用完！");
+    if (filtered.length === 0) return alert("題目已用完！");
     const shuffled = filtered.sort(() => Math.random() - 0.5);
     await update(ref(db, `rooms/${roomId}`), { state: 'PLAYING', queue: shuffled, currentIndex: 0, score: 0, history: [], timeLeft: roomData.timePerRound, isPaused: false });
   };
@@ -241,10 +245,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
   const confirmResult = async () => {
     const newScores = [...(roomData.roundScores || []), { round: roomData.currentRound, score: roomData.score }];
     const newUsedIds = [...(roomData.usedIds || []), ...(roomData.queue?.slice(0, roomData.currentIndex).map(q => q.id) || [])];
-    await update(ref(db, `rooms/${roomId}`), { 
-      state: roomData.currentRound >= roomData.totalRounds ? 'TOTAL_END' : 'ROUND_END', 
-      roundScores: newScores, usedIds: newUsedIds, isPaused: false 
-    });
+    await update(ref(db, `rooms/${roomId}`), { state: roomData.currentRound >= roomData.totalRounds ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds, isPaused: false });
   };
 
   if (roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
@@ -273,8 +274,8 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
           <img src="/time.png" alt="time" style={{height:'30px', filter:iconFilterGold, animation:(isTimeWarning && !roomData.isPaused)?'ioh-blink 0.5s infinite':'none'}} />
           <span>{roomData.timeLeft}s</span>
         </div>
-        <div style={{...infoText, color:COLORS.green, minWidth:'150px'}}>SCORE: {roomData.score}</div>
-        <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+        <div style={{...infoText, color: COLORS.green, minWidth: '150px'}}>SCORE: {roomData.score}</div>
+        <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
           {isReview && <button style={confirmBtn} onClick={confirmResult}>確認結算 ➔</button>}
           {!isReview && <button onClick={()=>update(ref(db, `rooms/${roomId}`), {isPaused: !roomData.isPaused})} style={pauseIconBtn}><img src="/pause.png" alt="pause" style={{height:'28px', filter:iconFilterGold, opacity:roomData.isPaused?0.5:1}}/></button>}
           <button style={resetSmallBtn} onClick={resetToHome}>RESET</button>
@@ -303,9 +304,9 @@ const updateHistory = (rid, data, idx) => {
   update(ref(db, `rooms/${rid}`), { history: newH, score: newH.filter(h=>h.type==='正確').length });
 };
 
-// --- 控制器端：遊戲畫面 ---
+// --- 控制器端 ---
 function PlayerView({ roomId, roomData, resetSystem }) {
-  const submit = async (type) => {
+  const handleBtnClick = async (type) => {
     if (!roomData || roomData.state !== 'PLAYING' || roomData.isPaused) return;
     const nextIdx = roomData.currentIndex + 1;
     const currentQ = roomData.queue[roomData.currentIndex];
@@ -314,7 +315,7 @@ function PlayerView({ roomId, roomData, resetSystem }) {
   };
   if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中 (房號: {roomId})...</h2></div>;
   if (roomData.state !== 'PLAYING') return (
-    <div style={layoutStyleMobile}><h2 style={{color:COLORS.red}}>⏳ 等待開始</h2><p>房號：{roomId}</p><p>請等待投影幕端啟動挑戰</p><button style={backLink} onClick={resetSystem}>返回首頁</button></div>
+    <div style={layoutStyleMobile}><h2 style={{color:COLORS.red}}>⏳ 等待開始</h2><p>房號：{roomId}</p><p>請等待老師啟動挑戰</p><button style={backLink} onClick={resetSystem}>返回首頁</button></div>
   );
   if (roomData.isPaused) return <div style={layoutStyleMobile}><h1 style={{color:COLORS.red, fontSize:'3rem'}}>暫停中</h1></div>;
   const currentQ = roomData.queue?.[roomData.currentIndex];
@@ -323,8 +324,8 @@ function PlayerView({ roomId, roomData, resetSystem }) {
       <h2 style={mobileHeader}>房號: {roomId} | 第 {roomData.currentRound} 輪</h2>
       <div style={mobileTermCard}><h2 style={mobileTermText}>{currentQ?.term}</h2></div>
       <div style={mobileButtonArea}>
-        <button style={{ ...mobileActionBtn, backgroundColor: COLORS.green }} onClick={() => submit('正確')}>正確</button>
-        <button style={{ ...mobileActionBtn, backgroundColor: COLORS.red }} onClick={() => submit('跳過')}>跳過</button>
+        <button style={{ ...mobileActionBtn, backgroundColor: COLORS.green }} onClick={() => handleBtnClick('正確')}>正確</button>
+        <button style={{ ...mobileActionBtn, backgroundColor: COLORS.red }} onClick={() => handleBtnClick('跳過')}>跳過</button>
       </div>
       <CopyrightFooter />
     </div>
@@ -344,7 +345,7 @@ function AdminView({ onBack }) {
         const json = XLSX.utils.sheet_to_json(workbook.Sheets[n]);
         all = [...all, ...json.map(i => ({ id: i['序號']||Math.random(), term: String(i['名詞']||''), book: String(i['分冊']||'').trim() }))];
       });
-      set(ref(db, 'question_pool'), all).then(() => alert("匯入成功！"));
+      set(ref(db, 'question_pool'), all).then(() => alert("題庫匯入成功！"));
     };
     reader.readAsArrayBuffer(file);
   };
@@ -353,7 +354,7 @@ function AdminView({ onBack }) {
 
 // --- 樣式設定 ---
 const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', background:COLORS.cream, position:'relative', padding:'20px', boxSizing:'border-box', textAlign:'center' };
-const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'550px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box' };
+const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'500px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box' };
 const titleContainer = { width:'100%', overflow:'hidden', display:'flex', justifyContent:'center', marginBottom:'30px' };
 const responsiveTitle = { fontSize:'clamp(2.5rem, 10vw, 5rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
 const subTitle = { fontSize:'2rem', marginBottom:'25px', color:COLORS.text, fontWeight:'bold' };
@@ -364,11 +365,11 @@ const iconLarge = { fontSize:'2.5rem', marginRight:'15px' };
 const roleBtnDisabled = { ...roleBtnCard, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
 const catBtnMobile = { padding:'15px', fontSize:'1.2rem', borderRadius:'15px', border:`2px solid ${COLORS.gold}`, background:'#fff', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
 const catBtnDisabled = { ...catBtnMobile, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
-const startBtn = { padding:'20px', fontSize:'1.8rem', borderRadius:'20px', border:'none', background:COLORS.gold, color:COLORS.text, fontWeight:'bold', cursor:'pointer', width:'100%' };
-const backLink = { background:'none', border:'none', color:'#888', cursor:'pointer', fontSize:'1.1rem', marginTop:'15px' };
-const adminEntryBtn = { position:'absolute', bottom:'30px', left:'30px', background:'none', border:'none', display:'flex', alignItems:'center', cursor:'pointer' };
+const startBtn = { padding:'20px', fontSize:'1.6rem', borderRadius: '20px', border:'none', background: COLORS.gold, fontWeight: 'bold', cursor: 'pointer', width: '100%', fontFamily: FONT_FAMILY };
+const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem', marginTop: '15px' };
+const adminEntryBtn = { position:'absolute', bottom:'30px', left:'30px', background: 'none', border: 'none', display: 'flex', alignItems: 'center', cursor: 'pointer' };
 const gameScreenStyle = { display:'flex', flexDirection:'column', height:'100vh', backgroundColor:COLORS.cream, overflow:'hidden' };
-const topBar = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 40px', background:COLORS.text, color:'#fff' };
+const topBar = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 40px', background:COLORS.text, color:'#fff' };
 const infoText = { fontSize:'26px', fontWeight:'bold' };
 const mainContent = { display:'flex', flex:1, overflow:'hidden' };
 const sideColumnPC = { width:'15%', padding:'20px', background:COLORS.red, display:'flex', flexDirection:'column', color:'#fff', boxSizing:'border-box' };
@@ -383,7 +384,7 @@ const mobileTermCard = { height:'35vh', display:'flex', alignItems:'center', jus
 const mobileTermText = { fontSize:'clamp(2rem, 12vw, 3.5rem)', color:COLORS.text, margin:0, fontWeight:'900' };
 const mobileButtonArea = { display:'flex', flexDirection:'column', gap:'15px', marginTop:'10px', width:'100%' };
 const mobileActionBtn = { padding:'25px 0', fontSize:'2.5rem', borderRadius:'20px', border:'none', color:'#fff', fontWeight:'bold', cursor:'pointer', boxShadow:'0 5px 15px rgba(0,0,0,0.1)' };
-const volumeBtnStyle = { position:'fixed', bottom:'15px', right:'15px', width:'55px', height:'55px', background:'white', border:`2px solid ${COLORS.gold}`, borderRadius:'50%', cursor:'pointer', padding:'10px', zIndex:2000, boxShadow:'0 4px 10px rgba(0,0,0,0.1)' };
+const volumeBtnStyle = { position:'fixed', bottom:'15px', right:'15px', width: '55px', height:'55px', background:'white', border:`2px solid ${COLORS.gold}`, borderRadius:'50%', cursor:'pointer', padding:'10px', zIndex:2000, boxShadow:'0 4px 10px rgba(0,0,0,0.1)' };
 const pauseIconBtn = { background:'none', border:'none', cursor:'pointer' };
 const resetSmallBtn = { padding:'5px 10px', background:'transparent', border:'1px solid #555', color:'#aaa', borderRadius: '4px', cursor: 'pointer' };
 const confirmBtn = { padding:'10px 20px', background:COLORS.gold, border:'none', borderRadius:'8px', color:COLORS.text, fontWeight:'bold', cursor:'pointer' };
