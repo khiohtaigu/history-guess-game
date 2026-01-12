@@ -114,17 +114,11 @@ export default function App() {
               {categories.map(cat => {
                 const isEnabled = cat === "全範圍" ? availableCats.length > 0 : availableCats.includes(cat);
                 return (
-                  <button 
-                    key={cat} 
-                    style={isEnabled ? catBtnMobile : catBtnDisabled} 
-                    disabled={!isEnabled}
+                  <button key={cat} style={isEnabled ? catBtnMobile : catBtnDisabled} disabled={!isEnabled}
                     onClick={async () => {
                       await update(ref(db, `rooms/${ROOM_ID}`), { subject: '歷史', category: cat });
                       setView('ROLE');
-                    }}
-                  >
-                    {cat}
-                  </button>
+                    }}>{cat}</button>
                 );
               })}
             </div>
@@ -163,7 +157,7 @@ export default function App() {
   );
 }
 
-// --- 1. 管理後台 ---
+// --- 1. 管理後台 (多分頁支援) ---
 function AdminView({ onBack }) {
   const [loading, setLoading] = useState(false);
   const handleFileUpload = (e) => {
@@ -199,7 +193,7 @@ function AdminView({ onBack }) {
   return (
     <div style={lobbyContainer}>
       <div style={glassCard}>
-        <h2 style={{color: COLORS.red}}>⚙️ 題庫管理</h2>
+        <h2>⚙️ 題庫管理</h2>
         <input type="file" accept=".xlsx" onChange={handleFileUpload} style={{margin: '30px 0'}} disabled={loading} />
         <br/><button style={backLink} onClick={onBack}>← 返回</button>
       </div>
@@ -207,7 +201,7 @@ function AdminView({ onBack }) {
   );
 }
 
-// --- 2. 投影幕組件 ---
+// --- 2. 投影幕組件 (強化 PC 端佈局) ---
 function ProjectorView({ roomData, resetSystem, volumeComp }) {
   const [tempSettings, setTempSettings] = useState({ rounds: 3, time: 180, dup: false });
 
@@ -247,7 +241,7 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
           <h2 style={{...subTitle, color: COLORS.red}}>初始設定</h2>
           <div style={settingRow}><span>總回合數</span><input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e => setTempSettings({...tempSettings, rounds: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} /></div>
           <div style={settingRow}><span>每輪秒數</span><input type="number" style={inputStyle} value={tempSettings.time} onChange={e => setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} /></div>
-          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許重複</label>
+          <label style={{display: 'block', margin: '20px 0', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許重複</label>
           <button style={{...startBtn, background: COLORS.green}} onClick={() => update(ref(db, `rooms/${ROOM_ID}`), { state: 'LOBBY', totalRounds: tempSettings.rounds, timePerRound: tempSettings.time, allowDuplicate: tempSettings.dup })}>儲存設定</button>
         </div>
         {volumeComp}
@@ -281,11 +275,6 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
     );
   }
 
-  // 遊戲進行中保護
-  if (roomData.state === 'PLAYING' && (!roomData.queue || !roomData.queue[roomData.currentIndex])) {
-    return <div style={lobbyContainer}>正在準備題目...</div>;
-  }
-
   const currentQ = roomData.queue?.[roomData.currentIndex];
   const isReview = roomData.state === 'REVIEW';
 
@@ -306,24 +295,31 @@ function ProjectorView({ roomData, resetSystem, volumeComp }) {
         <button style={resetSmallBtn} onClick={resetSystem}>RESET</button>
       </div>
       <div style={mainContent}>
-        <div style={sideColumnRedPC}>
+        {/* 左側清單 */}
+        <div style={sideColumnPC}>
           <h3 style={columnTitlePC}>正確</h3>
           <div style={listScroll}>
             {(roomData.history || []).map((h, i) => h.type === '正確' && (
-              <div key={i} style={listItemWhitePC} onClick={() => toggleItem(i)}>{h.q}</div>
+              <div key={i} style={listItemWhitePC} onClick={() => toggleItem(i)}>✓ {h.q}</div>
             )).reverse()}
           </div>
         </div>
+
+        {/* 中間題目 (強化防護) */}
         <div style={centerColumnPC}>
-          <div style={{fontSize: '32px', color: COLORS.red, marginBottom: '10px'}}>{currentQ?.category}</div>
-          <h1 style={mainTermStylePC(currentQ?.term || "")}>{currentQ?.term}</h1>
+          <div style={{fontSize: '36px', color: COLORS.red, marginBottom: '20px', fontWeight: 'bold'}}>{currentQ?.category}</div>
+          <div style={mainTermContainer}>
+             <h1 style={mainTermStylePC(currentQ?.term || "")}>{currentQ?.term}</h1>
+          </div>
           {isReview && <div style={{color: COLORS.red, fontSize: '28px', marginTop: '30px', fontWeight: 'bold'}}>核對模式：可點擊清單修正</div>}
         </div>
-        <div style={sideColumnRedPC}>
+
+        {/* 右側清單 */}
+        <div style={sideColumnPC}>
           <h3 style={columnTitlePC}>跳過</h3>
           <div style={listScroll}>
             {(roomData.history || []).map((h, i) => h.type === '跳過' && (
-              <div key={i} style={listItemWhitePC} onClick={() => toggleItem(i)}>{h.q}</div>
+              <div key={i} style={listItemWhitePC} onClick={() => toggleItem(i)}>✘ {h.q}</div>
             )).reverse()}
           </div>
         </div>
@@ -367,10 +363,20 @@ function PlayerView({ roomDataRef, volumeComp }) {
 }
 
 // --- 4. 樣式系統 ---
-const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box', textAlign: 'center' };
-const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '95%', maxWidth: '600px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
+const lobbyContainer = { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box' };
+const glassCard = { background: '#fff', padding: '40px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '90%', maxWidth: '600px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
+
+// 修正後的標題
 const titleContainer = { width: '100%', overflow: 'hidden', display: 'flex', justifyContent: 'center', marginBottom: '30px' };
-const responsiveTitle = { fontSize: 'clamp(2.5rem, 10vw, 5.5rem)', fontWeight: '900', color: COLORS.red, letterSpacing: '10px', lineHeight: '1.2', margin: 0 };
+const responsiveTitle = {
+  fontSize: 'clamp(2.5rem, 10vw, 5.5rem)',
+  fontWeight: '900',
+  color: COLORS.red,
+  letterSpacing: '10px',
+  lineHeight: '1.2',
+  margin: 0
+};
+
 const subTitle = { fontSize: '2rem', marginBottom: '25px', color: COLORS.text, fontWeight: 'bold' };
 const mobileGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px' };
 const roleBtn = { padding: '20px', fontSize: '1.4rem', borderRadius: '15px', border: `2px solid ${COLORS.gold}`, background: '#fff', cursor: 'pointer', fontWeight: 'bold', color: COLORS.text, fontFamily: FONT_FAMILY };
@@ -381,22 +387,33 @@ const startBtn = { padding: '20px', fontSize: '1.8rem', borderRadius: '20px', bo
 const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem', marginTop: '15px' };
 const adminEntryBtn = { position: 'absolute', bottom: '20px', left: '20px', background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', opacity: 0.3 };
 
-// 電腦端專用
+// PC 專屬 15/70/15 配置
 const gameScreenStyle = { display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: COLORS.cream, overflow: 'hidden' };
 const topBar = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 40px', background: COLORS.text, color: '#fff' };
 const infoText = { fontSize: '26px', fontWeight: 'bold' };
 const mainContent = { display: 'flex', flex: 1, overflow: 'hidden' };
-const sideColumnRedPC = { width: '20%', padding: '20px', background: COLORS.red, display: 'flex', flexDirection: 'column', color: '#fff', boxSizing: 'border-box' };
+
+const sideColumnPC = { width: '15%', padding: '20px', background: COLORS.red, display: 'flex', flexDirection: 'column', color: '#fff', boxSizing: 'border-box' };
 const columnTitlePC = { fontSize: '28px', borderBottom: '3px solid rgba(255,255,255,0.3)', paddingBottom: '10px', textAlign: 'center', fontWeight: 'bold', marginBottom: '15px' };
 const listItemWhitePC = { fontSize: '28px', padding: '15px', margin: '10px 0', borderRadius: '10px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', textAlign: 'left', fontWeight: 'bold' };
-const centerColumnPC = { width: '60%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 40px', boxSizing: 'border-box' };
-const mainTermStylePC = (text) => ({ fontSize: text.length > 7 ? '90px' : text.length > 5 ? '120px' : '170px', whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0, textAlign: 'center' });
 
-// 手機端專用
+const centerColumnPC = { width: '70%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 60px', boxSizing: 'border-box', position: 'relative' };
+const mainTermContainer = { width: '100%', maxWidth: '100%', overflow: 'hidden', textAlign: 'center' };
+const mainTermStylePC = (text) => ({ 
+  // 針對極長名詞進行分段字體縮放
+  fontSize: text.length > 12 ? '65px' : text.length > 8 ? '85px' : text.length > 5 ? '120px' : '170px', 
+  whiteSpace: 'nowrap', 
+  fontWeight: '900', 
+  color: COLORS.text, 
+  margin: 0,
+  textAlign: 'center'
+});
+
+// 手機端
 const mobilePlayerContainer = { display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: COLORS.cream, padding: '20px', boxSizing: 'border-box', textAlign: 'center' };
-const mobileHeader = { fontSize: '1.2rem', color: COLORS.red, fontWeight: 'bold', marginBottom: '10px' };
 const mobileTermCard = { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: '25px', border: `3px solid ${COLORS.gold}`, margin: '20px 0', padding: '20px' };
 const mobileTermText = { fontSize: 'clamp(2rem, 12vw, 3.5rem)', color: COLORS.text, margin: 0, fontWeight: '900' };
+const mobileHeader = { fontSize: '1.2rem', color: COLORS.red, fontWeight: 'bold', marginBottom: '10px' };
 const mobileButtonArea = { display: 'flex', flexDirection: 'column', gap: '15px', paddingBottom: '40px' };
 const mobileActionBtn = { padding: '25px 0', fontSize: '2rem', borderRadius: '20px', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer' };
 
@@ -406,8 +423,3 @@ const inputStyle = { padding: '12px', borderRadius: '10px', border: `2px solid $
 const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
 const volumeBtnStyle = { position: 'absolute', bottom: '20px', right: '20px', width: '60px', height: '60px', background: 'white', border: `2px solid ${COLORS.gold}`, borderRadius: '50%', cursor: 'pointer', padding: '12px', zIndex: 1000, boxShadow: '0 4px 10px rgba(0,0,0,0.1)' };
 const listScroll = { flex: 1, overflowY: 'auto' };
-const sideColumnRed = sideColumnRedPC; // alias
-const columnTitle = columnTitlePC; // alias
-const listItemWhite = listItemWhitePC; // alias
-const centerColumn = centerColumnPC; // alias
-const mainTermStyle = mainTermStylePC; // alias
