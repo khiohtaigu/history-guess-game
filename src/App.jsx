@@ -30,21 +30,15 @@ export default function App() {
   const [roomData, setRoomData] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [availableCats, setAvailableCats] = useState([]); 
-  const [totalUsers, setTotalUsers] = useState(0); // 累積使用人數
+  const [totalUsers, setTotalUsers] = useState(0); 
   const audioRef = useRef(null);
 
   useEffect(() => {
     document.title = "你講我臆";
-    
-    // --- 累積使用人數邏輯 ---
     const statsRef = ref(db, 'stats/totalUsers');
-    
-    // 1. 監聽總人數
     onValue(statsRef, (snapshot) => {
       if (snapshot.exists()) setTotalUsers(snapshot.val());
     });
-
-    // 2. 偵測裝置首訪並增加計數
     const hasVisited = localStorage.getItem('khiohtaigu_visited');
     if (!hasVisited) {
       runTransaction(statsRef, (currentValue) => {
@@ -79,7 +73,7 @@ export default function App() {
 
   const handleStartApp = () => {
     setView('SUBJECT');
-    if (audioRef.current) audioRef.current.play().catch(() => {});
+    if (audioRef.current) audioRef.current.play().catch(e => console.log("Audio deferred"));
   };
 
   const resetToHome = async () => {
@@ -91,12 +85,6 @@ export default function App() {
       setView('HOME');
     }
   };
-
-  const VolumeControl = () => (
-    <button onClick={() => setIsMuted(!isMuted)} style={volumeBtnStyle}>
-      <img src="/music.png" alt="music" style={{ width: '100%', height: '100%', filter: isMuted ? 'grayscale(1)' : iconFilterRed, opacity: isMuted ? 0.3 : 1 }} />
-    </button>
-  );
 
   const renderContent = () => {
     if (view === 'ADMIN') return <AdminView onBack={() => setView('HOME')} />;
@@ -272,10 +260,12 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
   if (roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
     const total = (roomData.roundScores || []).reduce((a, b) => a + b.score, 0);
     return (
-      <div style={lobbyContainer}><div style={glassCard}>
+      <div style={lobbyContainer}>
+        <div style={glassCard}>
           <h1>{roomData.state === 'TOTAL_END' ? "🏆 最終結算" : `第 ${roomData.currentRound} 輪`}</h1>
           {roomData.state === 'TOTAL_END' ? (
-            <div style={{margin: '20px 0'}}>{roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
+            <div style={{margin: '20px 0'}}>
+              {roomData.roundScores?.map((r, i) => <div key={i} style={{fontSize: '24px'}}>第 {r.round} 輪：{r.score} 分</div>)}
               <h2 style={{fontSize: '56px', color: COLORS.green, marginTop: '20px'}}>總分：{total}</h2>
             </div>
           ) : <h2 style={{color: COLORS.green, fontSize: '50px'}}>準備就緒</h2>}
@@ -285,7 +275,9 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
             startRound();
           }}>{roomData.state === 'TOTAL_END' ? "重新開始" : "開始挑戰"}</button>
           <button style={backLink} onClick={resetSystem}>重置回首頁</button>
-      </div><CopyrightFooter /></div>
+        </div>
+        <CopyrightFooter />
+      </div>
     );
   }
 
@@ -298,17 +290,24 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
     return { fontSize: size + 'px', whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0 };
   };
 
+  // --- 閃爍邏輯計算 ---
+  // 當小於等於 10 秒且秒數為偶數時，顯示金色；奇數時不套用濾鏡 (原始黑色)
+  const isTimeWarning = roomData.timeLeft <= 10;
+  const isFlashActive = roomData.timeLeft % 2 === 0;
+  const timerIconFilter = isTimeWarning 
+    ? (isFlashActive ? iconFilterGold : 'none') 
+    : iconFilterGold;
+
   return (
     <div style={gameScreenStyle}>
       <div style={topBar}>
         <div style={infoText}>{roomData.category} | RD {roomData.currentRound}</div>
         <div style={{...infoText, color: roomData.timeLeft <= 10 ? '#fff' : COLORS.gold, display: 'flex', alignItems: 'center', gap: '10px'}}>
-          <img src="/time.png" alt="time" style={{ height: '30px', filter: roomData.timeLeft <= 10 ? 'none' : iconFilterGold }} />
+          <img src="/time.png" alt="time" style={{ height: '30px', filter: timerIconFilter }} />
           <span>{roomData.timeLeft}s</span>
         </div>
         <div style={{...infoText, color: COLORS.green, minWidth: '150px'}}>SCORE: {roomData.score}</div>
         
-        {/* 右側按鈕與統計區塊 */}
         <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
           {isReview && <button style={confirmBtn} onClick={async () => {
             const newScores = [...(roomData.roundScores || []), { round: roomData.currentRound, score: roomData.score }];
@@ -316,15 +315,9 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
             await update(ref(db, `rooms/${ROOM_ID}`), { state: roomData.currentRound >= roomData.totalRounds ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds, isPaused: false });
           }}>確認結算 ➔</button>}
           
-          {/* 暫停與重置左移 */}
-          {!isReview && (
-            <button onClick={togglePause} style={pauseIconBtn}>
-              <img src="/pause.png" alt="pause" style={{ height: '28px', filter: iconFilterGold, opacity: roomData.isPaused ? 0.5 : 1 }} />
-            </button>
-          )}
+          {!isReview && <button onClick={togglePause} style={pauseIconBtn}><img src="/pause.png" alt="pause" style={{ height: '28px', filter: iconFilterGold, opacity: roomData.isPaused ? 0.5 : 1 }} /></button>}
           <button style={resetSmallBtn} onClick={resetSystem}>RESET</button>
           
-          {/* 最右側：累積人數 */}
           <div style={userCounterStyle}>
              <span style={{fontSize: '12px', opacity: 0.6, display: 'block', lineHeight: '1'}}>累積使用</span>
              <span style={{fontSize: '20px', color: COLORS.gold}}>{totalUsers}人</span>
@@ -381,7 +374,7 @@ function PlayerView({ roomData }) {
   );
 }
 
-// --- 樣式 ---
+// --- 樣式設定 ---
 const lobbyContainer = { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: COLORS.cream, position: 'relative', padding: '20px', boxSizing: 'border-box' };
 const glassCard = { background: '#fff', padding: '30px 20px', borderRadius: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.05)', textAlign: 'center', width: '90%', maxWidth: '500px', border: `4px solid ${COLORS.gold}`, boxSizing: 'border-box' };
 const titleContainer = { width: '100%', overflow: 'hidden', display: 'flex', justifyContent: 'center', marginBottom: '30px' };
