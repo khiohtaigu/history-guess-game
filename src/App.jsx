@@ -10,6 +10,7 @@ const FONT_FAMILY = '"Noto Serif TC", "Songti TC", "STSong", "SimSun", "PMingLiU
 const iconFilterRed = 'invert(11%) sepia(87%) saturate(6011%) hue-rotate(354deg) brightness(85%) contrast(116%)';
 const iconFilterGold = 'invert(88%) sepia(21%) saturate(769%) hue-rotate(344deg) brightness(102%) contrast(101%)';
 
+// --- 版權聲明 ---
 const CopyrightFooter = () => (
   <div style={footerStyle}>© 2025 你講我臆ＸKhiohtaigu. All Rights Reserved.</div>
 );
@@ -93,10 +94,12 @@ export default function App() {
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitleSmall}>你講我臆</h1></div>
             <div style={mobileVerticalGrid}>
-                <button style={startBtn} onClick={() => !user ? signInWithPopup(auth, new GoogleAuthProvider()).then(()=>setView('SUBJECT')) : setView('SUBJECT')}>💻 投影 (登入)</button>
+                <button style={startBtn} onClick={() => !user ? signInWithPopup(auth, new GoogleAuthProvider()).then(()=>setView('SUBJECT')) : setView('SUBJECT')}>
+                  💻 {user ? "投影" : "投影 (登入)"}
+                </button>
                 <button style={{...startBtn, background: COLORS.green}} onClick={() => setView('JOIN_ROOM')}>📱 控制器 (輸入代碼)</button>
             </div>
-            {user && <p style={{marginTop:'15px', fontSize:'14px'}}>{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline'}} onClick={()=>signOut(auth)}>登出</span></p>}
+            {user && <p style={{marginTop:'15px', fontSize:'14px'}}>{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline', marginLeft:'10px'}} onClick={()=>signOut(auth)}>登出</span></p>}
             <button style={backLink} onClick={() => setView('ENTRY')}>← 返回</button>
           </div>
           <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ <span style={{fontSize:'16px'}}>題庫匯入</span></button>
@@ -129,7 +132,7 @@ export default function App() {
                     onClick={async () => {
                       const newId = roomId || Math.floor(1000 + Math.random() * 9000).toString();
                       setRoomId(newId);
-                      await update(ref(db, `rooms/${newId}`), { category: cat, state: 'SETTINGS' });
+                      await update(ref(db, `rooms/${newId}`), { category: cat, state: 'SETTINGS', hostName: user?.displayName || "老師" });
                       setView('PROJECTOR_SETTINGS');
                     }}>{cat}</button>
                 );
@@ -157,14 +160,14 @@ export default function App() {
   );
 }
 
-// --- 輸入代碼 ---
+// --- 控制器端：輸入代碼 ---
 function JoinRoomView({ setRoomId, setView, resetToHome }) {
   const [code, setCode] = useState("");
   const handleJoin = async () => {
     if (code.length < 4) return;
     const s = await get(ref(db, `rooms/${code}`));
     if (s.exists()) { setRoomId(code); setView('PLAYER'); }
-    else alert("找不到房間！");
+    else alert("找不到代碼！");
   };
   return (
     <div style={lobbyContainer}><div style={glassCard}>
@@ -223,7 +226,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
     return () => clearInterval(timer);
   }, [roomId, roomData?.state, roomData?.timeLeft, roomData?.isPaused]);
 
-  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料讀取中...</h2></div>;
+  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料同步中...</h2></div>;
 
   const startRound = async () => {
     runTransaction(ref(db, 'stats/totalSessions'), (c) => (c || 0) + 1);
@@ -256,9 +259,9 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
       <div style={lobbyContainer}><div style={glassCard}>
           <h1>房間代碼：<span style={{color:COLORS.red}}>{roomId}</span></h1>
           {roomData.state === 'TOTAL_END' ? (
-            <div style={{marginBottom: '15px'}}>
+            <div>
               <h1 style={{color:COLORS.red, fontSize: '3rem', marginBottom: '5px'}}>🏆 最終結算</h1>
-              <div style={{margin: '10px 0', maxHeight: '200px', overflowY: 'auto'}}>
+              <div style={{margin: '10px 0', maxHeight: '250px', overflowY: 'auto'}}>
                  {roomData.roundScores?.map((r,i)=>{
                    const s = r.score < 10 ? `\u00A0${r.score}` : r.score;
                    return <div key={i} style={{fontSize:'32px', fontWeight:'bold', margin: '4px 0'}}>第 {r.round} 輪：{s} 分</div>
@@ -268,7 +271,7 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
             </div>
           ) : (
             <div style={{margin: '30px 0'}}>
-                <h1 style={{fontSize: '60px', color: COLORS.green, margin: 0, lineHeight: 1.2}}>準備就緒</h1>
+                <h1 style={{fontSize: '56px', color: COLORS.green, margin: 0, lineHeight: 1.2}}>準備就緒</h1>
                 <h2 style={{fontSize: '32px', color: COLORS.text, marginTop: '10px', fontWeight: 'normal'}}>(第 {roomData.currentRound} 輪)</h2>
             </div>
           )}
@@ -293,7 +296,8 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
       <div style={topBar}>
         <div style={infoText}>{roomData.category} | RD {roomData.currentRound} / {roomData.totalRounds} | 房號: {roomId}</div>
         <div style={{...infoText, color: isTimeWarning?'#fff':COLORS.gold, display:'flex', alignItems:'center', gap:'10px'}}>
-          <img src="/time.png" alt="time" style={timerIconStyle} /><span>{roomData.timeLeft}s</span>
+          <img src="/time.png" alt="time" style={timerIconStyle} />
+          <span>{roomData.timeLeft}s</span>
         </div>
         <div style={{...infoText, color: COLORS.green, minWidth: '150px'}}>SCORE: {roomData.score}</div>
         <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
@@ -336,19 +340,13 @@ function PlayerView({ roomId, roomData, resetToHome, setView }) {
     const newH = [...(roomData.history || []), { q: currentQ.term, type: type }];
     await update(ref(db, `rooms/${roomId}`), { currentIndex: nextIdx, score: type === '正確' ? roomData.score + 1 : roomData.score, history: newH });
   };
-
   if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中...</h2></div>;
-  
-  // --- 修正點：手機端 Time's up 畫面 ---
-  if (roomData.state === 'REVIEW') {
-    return (
-      <div style={{...layoutStyleMobile, background: COLORS.red, color: '#fff', justifyContent: 'center'}}>
-        <h1 style={{fontSize: '5rem', margin: 0, fontFamily: FONT_FAMILY}}>Time's up!</h1>
-        <p style={{fontSize: '2.5rem', fontFamily: FONT_FAMILY}}>時間到，請看大螢幕</p>
-      </div>
-    );
-  }
-
+  if (roomData.state === 'REVIEW') return (
+    <div style={{...layoutStyleMobile, background: COLORS.red, color: '#fff', justifyContent: 'center'}}>
+      <h1 style={{fontSize: '5rem', margin: 0, fontFamily: FONT_FAMILY}}>Time's up!</h1>
+      <p style={{fontSize: '2.5rem', fontFamily: FONT_FAMILY}}>時間到，請看大螢幕</p>
+    </div>
+  );
   if (roomData.state !== 'PLAYING') return (
     <div style={layoutStyleMobile}><h2 style={{color:COLORS.red, fontSize: '2.5rem', marginBottom: '10px'}}>{roomData.state === 'TOTAL_END' ? "🏆 挑戰結束" : "⏳ 等待啟動"}</h2><button style={backLinkButton} onClick={resetToHome}>返回首頁</button></div>
   );
@@ -389,7 +387,7 @@ function AdminView({ onBack }) {
 }
 
 // --- 樣式設定 ---
-const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:COLORS.cream, position:'relative', padding:'40px 20px 120px 20px', boxSizing:'border-box', textAlign:'center' };
+const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:COLORS.cream, position:'relative', padding:'20px 20px 120px 20px', boxSizing:'border-box', textAlign:'center' };
 const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'550px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box', marginBottom: '10px' };
 const titleContainer = { width:'100%', overflow:'hidden', display:'flex', justifyContent:'center', marginBottom:'30px' };
 const responsiveTitle = { fontSize:'clamp(3rem, 12vw, 6rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
@@ -403,6 +401,7 @@ const roleBtnDisabled = { ...roleBtnCard, background:'#eee', color:'#aaa', curso
 const catBtnMobile = { padding:'15px', fontSize:'1.2rem', borderRadius:'15px', border:`2px solid ${COLORS.gold}`, background:'#fff', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
 const catBtnDisabled = { ...catBtnMobile, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
 const startBtn = { padding:'20px', fontSize:'1.8rem', borderRadius: '20px', border:'none', background: COLORS.gold, color: COLORS.text, fontWeight: 'bold', cursor: 'pointer', width: '100%', fontFamily: FONT_FAMILY };
+const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem', marginTop: '10px' };
 const backLinkButton = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.2rem', textDecoration: 'underline', padding: '10px', fontFamily: FONT_FAMILY };
 const adminEntryBtn = { position:'absolute', bottom:'30px', left:'30px', background: 'none', border: 'none', display: 'flex', alignItems: 'center', cursor: 'pointer' };
 const gameScreenStyle = { display:'flex', flexDirection:'column', height:'100vh', backgroundColor:COLORS.cream, overflow:'hidden' };
