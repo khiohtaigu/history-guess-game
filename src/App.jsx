@@ -12,11 +12,11 @@ const iconFilterGold = 'invert(88%) sepia(21%) saturate(769%) hue-rotate(344deg)
 
 // --- 版權聲明 ---
 const CopyrightFooter = () => (
-  <div style={footerStyle}>© 2025 你講我臆 x Khiohtaigu. All Rights Reserved.</div>
+  <div style={footerStyle}>© 2025 你講我臆ＸKhiohtaigu. All Rights Reserved.</div>
 );
 
 export default function App() {
-  const [view, setView] = useState('HOME'); 
+  const [view, setView] = useState('ENTRY'); // ENTRY, HOME, SUBJECT, CATEGORY, ROLE, etc.
   const [user, setUser] = useState(null);
   const [roomId, setRoomId] = useState(""); 
   const [roomData, setRoomData] = useState(null);
@@ -70,17 +70,11 @@ export default function App() {
     } else {
       setView('SUBJECT');
     }
-    if (audioRef.current) audioRef.current.play().catch(() => {});
-  };
-
-  const handleStudentStart = () => {
-    setView('JOIN_ROOM');
-    if (audioRef.current) audioRef.current.play().catch(() => {});
   };
 
   const resetToHome = async () => {
     if (window.confirm("確定要重置並回到首頁嗎？")) {
-      setView('HOME');
+      setView('ENTRY');
       setRoomId("");
       setRoomData(null);
     }
@@ -95,20 +89,46 @@ export default function App() {
   const renderContent = () => {
     switch (view) {
       case 'ADMIN': return <AdminView onBack={() => setView('HOME')} />;
-      case 'HOME': return (
+      
+      // 第一層：純標題與進入鈕
+      case 'ENTRY': return (
         <div style={lobbyContainer}>
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitle}>你講我臆</h1></div>
+            <button style={startBtn} onClick={() => {
+              setView('HOME');
+              if (audioRef.current) audioRef.current.play().catch(() => {});
+            }}>點擊進入 ➔</button>
+          </div>
+          <CopyrightFooter />
+        </div>
+      );
+
+      // 第二層：選擇身分
+      case 'HOME': return (
+        <div style={lobbyContainer}>
+          <div style={glassCard}>
+            <div style={titleContainer}><h1 style={responsiveTitleSmall}>你講我臆</h1></div>
             <div style={mobileVerticalGrid}>
-                <button style={startBtn} onClick={handleTeacherStart}>💻 投影 (登入)</button>
-                <button style={{...startBtn, background: COLORS.green}} onClick={handleStudentStart}>📱 控制器 (輸入代碼)</button>
+                <button style={startBtn} onClick={handleTeacherStart}>
+                  💻 {user ? "投影" : "投影 (登入)"}
+                </button>
+                <button style={{...startBtn, background: COLORS.green}} onClick={() => setView('JOIN_ROOM')}>
+                  📱 控制器 (輸入代碼)
+                </button>
             </div>
-            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>老師：{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline'}} onClick={()=>signOut(auth)}>登出</span></p>}
+            {user && (
+              <p style={{marginTop: '20px', fontSize: '16px'}}>
+                {user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline', marginLeft:'10px'}} onClick={()=>signOut(auth)}>登出</span>
+              </p>
+            )}
+            <button style={backLink} onClick={() => setView('ENTRY')}>← 返回</button>
           </div>
           <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ <span style={{fontSize:'16px'}}>題庫匯入</span></button>
           <CopyrightFooter />
         </div>
       );
+
       case 'SUBJECT': return (
         <div style={lobbyContainer}>
           <div style={glassCard}>
@@ -135,9 +155,7 @@ export default function App() {
                     onClick={async () => {
                       const newId = roomId || Math.floor(1000 + Math.random() * 9000).toString();
                       setRoomId(newId);
-                      await update(ref(db, `rooms/${newId}`), { 
-                        category: cat, state: 'SETTINGS', hostName: user?.displayName || "老師" 
-                      });
+                      await update(ref(db, `rooms/${newId}`), { category: cat, state: 'SETTINGS', hostName: user?.displayName || "老師" });
                       setView('PROJECTOR_SETTINGS');
                     }}>{cat}</button>
                 );
@@ -148,20 +166,7 @@ export default function App() {
           <CopyrightFooter />
         </div>
       );
-      case 'ROLE': return (
-        <div style={lobbyContainer}>
-          <div style={glassCard}>
-            <h2 style={subTitle}>選擇身分</h2>
-            <div style={mobileVerticalGrid}>
-              <button style={roleBtnCard} onClick={createRoom}><span style={iconLarge}>💻</span> 我是投影幕 (新房間)</button>
-              <button style={roleBtnCard} onClick={() => setView('JOIN_ROOM')}><span style={iconLarge}>📱</span> 我是控制器 (加入)</button>
-            </div>
-            <button style={backLink} onClick={() => setView('CATEGORY')}>← 返回</button>
-          </div>
-          <CopyrightFooter />
-        </div>
-      );
-      case 'JOIN_ROOM': return <JoinRoomView setRoomId={setRoomId} setView={setView} />;
+      case 'JOIN_ROOM': return <JoinRoomView setRoomId={setRoomId} setView={setView} resetToHome={resetToHome} />;
       case 'PROJECTOR_SETTINGS': return <ProjectorSettings roomId={roomId} setView={setView} />;
       case 'PROJECTOR_GAME': return <ProjectorGameView roomId={roomId} roomData={roomData} resetToHome={resetToHome} setView={setView} totalSessions={totalSessions} />;
       case 'PLAYER': return <PlayerView roomId={roomId} roomData={roomData} resetToHome={resetToHome} setView={setView} />;
@@ -178,8 +183,8 @@ export default function App() {
   );
 }
 
-// --- 輸入代碼 ---
-function JoinRoomView({ setRoomId, setView }) {
+// --- 控制器端：輸入代碼 ---
+function JoinRoomView({ setRoomId, setView, resetToHome }) {
   const [code, setCode] = useState("");
   const handleJoin = async () => {
     if (code.length < 4) return;
@@ -192,12 +197,12 @@ function JoinRoomView({ setRoomId, setView }) {
       <h2 style={subTitle}>輸入 4 碼房間代碼</h2>
       <input type="number" style={{...inputStyle, width:'220px', fontSize:'3.5rem', margin:'30px 0'}} value={code} onChange={e=>setCode(e.target.value)} onFocus={e=>e.target.select()} />
       <button style={startBtn} onClick={handleJoin}>進入挑戰 ➔</button>
-      <button style={backLink} onClick={()=>setView('HOME')}>← 返回</button>
+      <button style={backLink} onClick={resetToHome}>← 返回</button>
     </div><CopyrightFooter /></div>
   );
 }
 
-// --- 初始設定 ---
+// --- 投影幕端：初始設定 ---
 function ProjectorSettings({ roomId, setView }) {
   const [rounds, setRounds] = useState(3);
   const [time, setTime] = useState(180);
@@ -226,7 +231,7 @@ function ProjectorSettings({ roomId, setView }) {
   );
 }
 
-// --- 投影幕遊戲畫面 ---
+// --- 投影幕端：遊戲主畫面 ---
 function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessions }) {
   useEffect(() => {
     let timer;
@@ -260,10 +265,6 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
     await update(ref(db, `rooms/${roomId}`), updates);
   };
 
-  const handleRestart = async () => {
-    await update(ref(db, `rooms/${roomId}`), { state: 'LOBBY', currentRound: 1, score: 0, roundScores: [], usedIds: [], history: [] });
-  };
-
   if (roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
     const total = (roomData?.roundScores || []).reduce((a, b) => a + b.score, 0);
     return (
@@ -272,29 +273,19 @@ function ProjectorGameView({ roomId, roomData, resetToHome, setView, totalSessio
           {roomData.state === 'TOTAL_END' ? (
             <div style={{marginBottom: '20px'}}>
               <h1 style={{color:COLORS.red, fontSize: '3rem', marginBottom: '10px'}}>🏆 最終結算</h1>
-              <div style={{margin: '10px 0', maxHeight: '200px', overflowY: 'auto'}}>
+              <div style={{margin: '10px 0'}}>
                  {roomData.roundScores?.map((r,i)=>(
-                   <div key={i} style={{fontSize:'32px', fontWeight:'bold', margin: '8px 0'}}>第 {r.round} 輪：{r.score} 分</div>
+                   <div key={i} style={{fontSize:'32px', fontWeight:'bold', margin: '15px 0'}}>第 {r.round} 輪：{r.score} 分</div>
                  ))}
               </div>
               <h2 style={{fontSize:'56px', color:COLORS.green, borderTop: '2px solid #eee', marginTop: '10px', paddingTop: '10px'}}>總分：{total}</h2>
             </div>
-          ) : (
-            <div style={{margin: '40px 0'}}>
-                <h1 style={{fontSize: '60px', color: COLORS.green, margin: 0, lineHeight: 1.2}}>準備就緒</h1>
-                <h2 style={{fontSize: '40px', color: COLORS.text, marginTop: '10px'}}>(第 {roomData.currentRound} 輪)</h2>
-            </div>
-          )}
-          <div style={{display:'flex', flexDirection:'column', gap:'10px'}}>
-            <button style={startBtn} onClick={roomData.state === 'TOTAL_END' ? handleRestart : startRound}>
+          ) : <h2 style={{color: COLORS.green, fontSize:'60px', margin: '40px 0'}}>準備就緒 (第 {roomData.currentRound} 輪)</h2>}
+          <div style={mobileVerticalGrid}>
+            <button style={startBtn} onClick={roomData.state === 'TOTAL_END' ? (()=>update(ref(db,`rooms/${roomId}`),{state:'LOBBY',currentRound:1,score:0,roundScores:[],usedIds:[],history:[]})) : startRound}>
                {roomData.state === 'TOTAL_END' ? "重新遊戲" : "開始挑戰"}
             </button>
-            {roomData.state === 'TOTAL_END' && (
-              <button style={{...startBtn, background: COLORS.green}} onClick={async () => {
-                await update(ref(db, `rooms/${roomId}`), { state: 'SETTINGS' });
-                setView('CATEGORY');
-              }}>重選範圍</button>
-            )}
+            {roomData.state === 'TOTAL_END' && <button style={{...startBtn, background: COLORS.green}} onClick={async()=>{await update(ref(db,`rooms/${roomId}`),{state:'SETTINGS'});setView('CATEGORY');}}>重選範圍</button>}
             <button style={backLinkButton} onClick={resetToHome}>回首頁</button>
           </div>
       </div><CopyrightFooter /></div>
@@ -361,30 +352,16 @@ function PlayerView({ roomId, roomData, resetToHome, setView }) {
   };
 
   if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中...</h2></div>;
-  
-  // 修正：手機端 Time's up 畫面 (強制宋體)
-  if (roomData.state === 'REVIEW') {
-    return (
-      <div style={{...layoutStyleMobile, background: COLORS.red, color: '#fff', justifyContent: 'center'}}>
-        <h1 style={{fontSize: '5rem', margin: 0, fontFamily: FONT_FAMILY}}>Time's up!</h1>
-        <p style={{fontSize: '2rem', fontFamily: FONT_FAMILY}}>時間到，請看大螢幕</p>
-      </div>
-    );
-  }
-
-  if (roomData.state !== 'PLAYING') {
-    return (
-      <div style={layoutStyleMobile}>
+  if (roomData.state === 'REVIEW') return <div style={{...layoutStyleMobile, background: COLORS.red, color: '#fff', justifyContent: 'center'}}><h1 style={{fontSize: '5rem', margin: 0}}>Time's up!</h1><p style={{fontSize: '2rem'}}>時間到，請看大螢幕</p></div>;
+  if (roomData.state !== 'PLAYING') return (
+    <div style={layoutStyleMobile}>
         <h2 style={{color:COLORS.red, fontSize: '2.5rem', marginBottom: '10px'}}>{roomData.state === 'TOTAL_END' ? "🏆 挑戰結束" : "⏳ 等待啟動"}</h2>
         <p style={{fontSize: '1.2rem'}}>房號：{roomId} | 範圍：{roomData.category}</p>
         {roomData.state === 'TOTAL_END' && <button style={startBtn} onClick={() => setView('JOIN_ROOM')}>重新輸入房號</button>}
         <button style={backLinkButton} onClick={resetToHome}>返回首頁</button>
-      </div>
-    );
-  }
-
+    </div>
+  );
   if (roomData.isPaused) return <div style={layoutStyleMobile}><h1 style={{color:COLORS.red, fontSize:'3rem'}}>暫停中</h1></div>;
-
   const currentQ = roomData.queue?.[roomData.currentIndex];
   if (!currentQ) return <div style={layoutStyleMobile}><h2>🏁 準備結算中</h2></div>;
 
@@ -421,11 +398,12 @@ function AdminView({ onBack }) {
   return <div style={lobbyContainer}><div style={glassCard}><h2>題庫管理</h2><input type="file" onChange={handleFileUpload}/><br/><button style={backLinkButton} onClick={onBack}>← 返回</button></div></div>;
 }
 
-// --- 樣式設定 ---
+// --- 樣式系統 ---
 const lobbyContainer = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100vh', background:COLORS.cream, position:'relative', padding:'20px 20px 100px 20px', boxSizing:'border-box', textAlign:'center' };
 const glassCard = { background:'#fff', padding:'30px 20px', borderRadius:'30px', boxShadow:'0 20px 50px rgba(0,0,0,0.05)', textAlign:'center', width:'95%', maxWidth:'500px', border:`4px solid ${COLORS.gold}`, boxSizing:'border-box' };
 const titleContainer = { width:'100%', overflow:'hidden', display:'flex', justifyContent:'center', marginBottom:'30px' };
-const responsiveTitle = { fontSize:'clamp(2.5rem, 10vw, 5rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
+const responsiveTitle = { fontSize:'clamp(3rem, 12vw, 6rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
+const responsiveTitleSmall = { fontSize:'clamp(2.5rem, 10vw, 5rem)', fontWeight:'900', color:COLORS.red, letterSpacing:'10px', margin:0 };
 const subTitle = { fontSize:'2rem', marginBottom:'25px', color:COLORS.text, fontWeight:'bold' };
 const mobileGrid = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px', marginBottom:'25px' };
 const mobileVerticalGrid = { display:'flex', flexDirection:'column', gap:'15px', marginBottom:'25px', width: '100%' };
@@ -441,7 +419,7 @@ const adminEntryBtn = { position:'absolute', bottom:'30px', left:'30px', backgro
 const gameScreenStyle = { display:'flex', flexDirection:'column', height:'100vh', backgroundColor:COLORS.cream, overflow:'hidden' };
 const topBar = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 40px', background:COLORS.text, color:'#fff' };
 const infoText = { fontSize:'26px', fontWeight:'bold' };
-const mainContent = { display:'flex', flex: 1, overflow:'hidden' };
+const mainContent = { display:'flex', flex:1, overflow:'hidden' };
 const sideColumnPC = { width:'15%', padding:'20px', background:COLORS.red, display:'flex', flexDirection:'column', color:'#fff', boxSizing:'border-box' };
 const columnTitlePC = { fontSize:'28px', borderBottom: '3px solid rgba(255,255,255,0.3)', paddingBottom: '10px', textAlign: 'center', fontWeight: 'bold', marginBottom: '15px' };
 const listItemWhitePC = { fontSize: '28px', padding: '15px', margin: '10px 0', borderRadius: '10px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.15)', color: '#fff', textAlign: 'left', fontWeight: 'bold' };
@@ -449,12 +427,7 @@ const centerColumnPC = { width:'70%', display:'flex', flexDirection:'column', al
 const mainTermContainer = { width:'100%', overflow:'hidden', textAlign:'center' };
 const mainTermStylePC = (t) => ({ fontSize: t.length > 12 ? '65px' : t.length > 8 ? '85px' : t.length > 5 ? '120px' : '170px', whiteSpace:'nowrap', fontWeight:'900', color:COLORS.text, margin:0 });
 
-// 手機端控制器佈局 (強制繼承字體)
-const layoutStyleMobile = { 
-  display:'flex', flexDirection:'column', height:'100vh', width:'100vw', 
-  background:COLORS.cream, padding:'0 20px', boxSizing:'border-box', textAlign:'center', 
-  justifyContent:'flex-start', paddingTop: '80px', fontFamily: FONT_FAMILY 
-};
+const layoutStyleMobile = { display:'flex', flexDirection:'column', height:'100vh', width:'100vw', background:COLORS.cream, padding:'0 20px', boxSizing:'border-box', textAlign:'center', justifyContent:'flex-start', paddingTop: '80px', fontFamily: FONT_FAMILY };
 const mobileHeader = { fontSize:'1.5rem', color:COLORS.red, fontWeight:'bold', margin:'30px 0 10px 0' };
 const mobileTermCard = { height:'35vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#fff', borderRadius:'25px', border:`3px solid ${COLORS.gold}`, margin:'10px 0', padding:'20px', width:'100%', boxSizing:'border-box' };
 const mobileTermText = { fontSize:'clamp(2rem, 12vw, 3.5rem)', color:COLORS.text, margin:0, fontWeight:'900' };
@@ -468,19 +441,5 @@ const inputStyle = { padding: '12px', borderRadius: '10px', border: `2px solid $
 const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
 const listScroll = { flex: 1, overflowY: 'auto' };
 
-const footerStyle = {
-  position: 'fixed', 
-  bottom: '10px', 
-  left: 0,
-  width: '100%',
-  textAlign: 'center',
-  fontSize: '12px',
-  color: COLORS.text,
-  opacity: 0.5,
-  letterSpacing: '1px',
-  pointerEvents: 'none',
-  zIndex: 1000,
-  fontFamily: FONT_FAMILY
-};
-
+const footerStyle = { position: 'fixed', bottom: '10px', left: 0, width: '100%', textAlign: 'center', fontSize: '12px', color: COLORS.text, opacity: 0.5, letterSpacing: '1px', pointerEvents: 'none', zIndex: 1000, fontFamily: FONT_FAMILY };
 const userCounterStyle = { textAlign:'right', borderLeft:'1px solid rgba(255,255,255,0.2)', paddingLeft:'15px' };
