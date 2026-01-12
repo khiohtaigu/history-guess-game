@@ -468,7 +468,7 @@ const footerStyle = {
   letterSpacing: '1px',
   pointerEvents: 'none',
   zIndex: 1000,
-  fontFamily: FONT_FAMILY
+  fontFamily: FONT_FAMILY 
 };
 
 const userCounterStyle = { textAlign:'right', borderLeft:'1px solid rgba(255,255,255,0.2)', paddingLeft:'15px' };
