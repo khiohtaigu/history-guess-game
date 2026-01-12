@@ -35,6 +35,18 @@ export default function App() {
 
   useEffect(() => {
     document.title = "你講我臆";
+
+    // 注入閃爍動畫 CSS (一秒兩次)
+    const style = document.createElement("style");
+    style.innerHTML = `
+      @keyframes ioh-blink {
+        0% { filter: ${iconFilterGold}; }
+        50% { filter: none; }
+        100% { filter: ${iconFilterGold}; }
+      }
+    `;
+    document.head.appendChild(style);
+
     const statsRef = ref(db, 'stats/totalUsers');
     onValue(statsRef, (snapshot) => {
       if (snapshot.exists()) setTotalUsers(snapshot.val());
@@ -85,6 +97,12 @@ export default function App() {
       setView('HOME');
     }
   };
+
+  const VolumeControl = () => (
+    <button onClick={() => setIsMuted(!isMuted)} style={volumeBtnStyle}>
+      <img src="/music.png" alt="music" style={{ width: '100%', height: '100%', filter: isMuted ? 'grayscale(1)' : iconFilterRed, opacity: isMuted ? 0.3 : 1 }} />
+    </button>
+  );
 
   const renderContent = () => {
     if (view === 'ADMIN') return <AdminView onBack={() => setView('HOME')} />;
@@ -249,9 +267,15 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
     return (
       <div style={lobbyContainer}><div style={glassCard}>
           <h2 style={{...subTitle, color: COLORS.red}}>初始設定</h2>
-          <div style={settingRow}><span>總回合</span><input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e => setTempSettings({...tempSettings, rounds: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} /></div>
-          <div style={settingRow}><span>每輪秒數</span><input type="number" style={inputStyle} value={tempSettings.time} onChange={e => setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} /></div>
-          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許重複</label>
+          <div style={settingRow}>
+            <span>總回合數</span>
+            <input type="number" style={inputStyle} value={tempSettings.rounds} onChange={e => setTempSettings({...tempSettings, rounds: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} />
+          </div>
+          <div style={settingRow}>
+            <span>每輪秒數</span>
+            <input type="number" style={inputStyle} value={tempSettings.time} onChange={e => setTempSettings({...tempSettings, time: parseInt(e.target.value) || 0})} onFocus={e => e.target.select()} />
+          </div>
+          <label style={{display: 'block', margin: '20px 0', fontSize: '1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={tempSettings.dup} onChange={e=>setTempSettings({...tempSettings, dup: e.target.checked})} /> 允許題目重複</label>
           <button style={{...startBtn, background: COLORS.green}} onClick={() => update(ref(db, `rooms/${ROOM_ID}`), { state: 'LOBBY', totalRounds: tempSettings.rounds, timePerRound: tempSettings.time, allowDuplicate: tempSettings.dup, isPaused: false })}>儲存設定</button>
       </div><CopyrightFooter /></div>
     );
@@ -290,20 +314,21 @@ function ProjectorView({ roomData, resetSystem, totalUsers }) {
     return { fontSize: size + 'px', whiteSpace: 'nowrap', fontWeight: '900', color: COLORS.text, margin: 0 };
   };
 
-  // --- 閃爍邏輯計算 ---
-  // 當小於等於 10 秒且秒數為偶數時，顯示金色；奇數時不套用濾鏡 (原始黑色)
+  // --- 修正後的閃爍與沙漏邏輯 ---
   const isTimeWarning = roomData.timeLeft <= 10;
-  const isFlashActive = roomData.timeLeft % 2 === 0;
-  const timerIconFilter = isTimeWarning 
-    ? (isFlashActive ? iconFilterGold : 'none') 
-    : iconFilterGold;
+  const timerIconStyle = {
+    height: '30px',
+    filter: iconFilterGold,
+    // 如果小於 10 秒且沒暫停，套用 ioh-blink 動畫，0.5秒一個週期 (一秒閃兩次)
+    animation: (isTimeWarning && !roomData.isPaused) ? 'ioh-blink 0.5s infinite' : 'none'
+  };
 
   return (
     <div style={gameScreenStyle}>
       <div style={topBar}>
         <div style={infoText}>{roomData.category} | RD {roomData.currentRound}</div>
         <div style={{...infoText, color: roomData.timeLeft <= 10 ? '#fff' : COLORS.gold, display: 'flex', alignItems: 'center', gap: '10px'}}>
-          <img src="/time.png" alt="time" style={{ height: '30px', filter: timerIconFilter }} />
+          <img src="/time.png" alt="time" style={timerIconStyle} />
           <span>{roomData.timeLeft}s</span>
         </div>
         <div style={{...infoText, color: COLORS.green, minWidth: '150px'}}>SCORE: {roomData.score}</div>
@@ -408,7 +433,7 @@ const mobileButtonArea = { display: 'flex', flexDirection: 'column', gap: '15px'
 const mobileActionBtn = { padding: '25px 0', fontSize: '2.5rem', borderRadius: '20px', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.1)' };
 const volumeBtnStyle = { position: 'fixed', bottom: '15px', right: '15px', width: '55px', height: '55px', background: 'white', border: `2px solid ${COLORS.gold}`, borderRadius: '50%', cursor: 'pointer', padding: '10px', zIndex: 2000, boxShadow: '0 4px 10px rgba(0,0,0,0.1)' };
 const pauseIconBtn = { background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' };
-const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' };
+const resetSmallBtn = { padding: '5px 10px', background: 'transparent', border: '1px solid #555', color: '#aaa', borderRadius: '4px', cursor: 'pointer' };
 const confirmBtn = { padding: '10px 20px', background: COLORS.gold, border: 'none', borderRadius: '8px', color: COLORS.text, fontWeight: 'bold', cursor: 'pointer' };
 const inputStyle = { padding: '12px', borderRadius: '10px', border: `2px solid ${COLORS.gold}`, width: '150px', textAlign: 'center', fontSize: '1.8rem', backgroundColor: '#fff', color: COLORS.text, cursor: 'text' };
 const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
