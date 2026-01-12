@@ -29,7 +29,6 @@ export default function App() {
   useEffect(() => {
     document.title = "你講我臆";
 
-    // 注入閃爍動畫 CSS
     const style = document.createElement("style");
     style.innerHTML = `
       @keyframes ioh-blink-fast {
@@ -57,9 +56,7 @@ export default function App() {
   useEffect(() => {
     if (!roomId) return;
     const roomRef = ref(db, `rooms/${roomId}`);
-    const unsub = onValue(roomRef, (snapshot) => {
-      setRoomData(snapshot.val());
-    });
+    const unsub = onValue(roomRef, (snapshot) => { setRoomData(snapshot.val()); });
     return () => unsub();
   }, [roomId]);
 
@@ -90,12 +87,7 @@ export default function App() {
     setRoomId(newId);
     const cat = localStorage.getItem('temp_cat') || "全範圍";
     set(ref(db, `rooms/${newId}`), {
-      state: 'SETTINGS',
-      currentRound: 1,
-      score: 0,
-      isPaused: false,
-      category: cat,
-      hostName: user?.displayName || "老師"
+      state: 'SETTINGS', currentRound: 1, score: 0, isPaused: false, category: cat, hostName: user?.displayName || "老師"
     }).then(() => setView('PROJECTOR_SETTINGS'));
   };
 
@@ -121,10 +113,10 @@ export default function App() {
           <div style={glassCard}>
             <div style={titleContainer}><h1 style={responsiveTitle}>你講我臆</h1></div>
             <div style={mobileVerticalGrid}>
-                <button style={startBtn} onClick={handleTeacherStart}>💻 我是老師 (需登入)</button>
-                <button style={{...startBtn, background: COLORS.green}} onClick={handleStudentStart}>📱 我是學生 (輸入代碼)</button>
+                <button style={startBtn} onClick={handleTeacherStart}>💻 投影 (登入)</button>
+                <button style={{...startBtn, background: COLORS.green}} onClick={handleStudentStart}>📱 控制器 (輸入代碼)</button>
             </div>
-            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>老師：{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline'}} onClick={()=>signOut(auth)}>登出</span></p>}
+            {user && <p style={{marginTop: '15px', fontSize: '14px'}}>登入身分：{user.displayName} <span style={{cursor:'pointer', color:COLORS.red, textDecoration:'underline'}} onClick={()=>signOut(auth)}>登出</span></p>}
           </div>
           <button style={adminEntryBtn} onClick={() => setView('ADMIN')}>⚙️ <span style={{fontSize:'16px'}}>題庫匯入</span></button>
           <CopyrightFooter />
@@ -153,23 +145,11 @@ export default function App() {
                 const isEnabled = cat === "全範圍" ? availableCats.length > 0 : availableCats.includes(cat);
                 return (
                   <button key={cat} style={isEnabled ? catBtnMobile : catBtnDisabled} disabled={!isEnabled}
-                    onClick={() => { localStorage.setItem('temp_cat', cat); setView('ROLE'); }}>{cat}</button>
+                    onClick={() => { localStorage.setItem('temp_cat', cat); createRoom(); }}>{cat}</button>
                 );
               })}
             </div>
             <button style={backLink} onClick={() => setView('SUBJECT')}>← 返回</button>
-          </div>
-        </div>
-      );
-      case 'ROLE': return (
-        <div style={lobbyContainer}>
-          <div style={glassCard}>
-            <h2 style={subTitle}>選擇身份</h2>
-            <div style={mobileVerticalGrid}>
-              <button style={roleBtnCard} onClick={createRoom}><span style={iconLarge}>💻</span> 我是投影幕 (新房間)</button>
-              <button style={roleBtnCard} onClick={() => setView('JOIN_ROOM')}><span style={iconLarge}>📱</span> 我是控制器 (加入)</button>
-            </div>
-            <button style={backLink} onClick={() => setView('CATEGORY')}>← 返回</button>
           </div>
         </div>
       );
@@ -201,7 +181,7 @@ function JoinRoomView({ setRoomId, setView }) {
   };
   return (
     <div style={lobbyContainer}><div style={glassCard}>
-      <h2 style={subTitle}>輸入 4 碼房間代碼</h2>
+      <h2 style={subTitle}>輸入投影幕上的 4 碼代碼</h2>
       <input type="number" style={{...inputStyle, width:'220px', fontSize:'3.5rem', margin:'30px 0'}} value={code} onChange={e=>setCode(e.target.value)} onFocus={e=>e.target.select()} />
       <button style={startBtn} onClick={handleJoin}>進入挑戰 ➔</button>
       <button style={backLink} onClick={()=>setView('HOME')}>← 返回</button>
@@ -216,9 +196,9 @@ function ProjectorSettings({ roomId, setView }) {
   const [dup, setDup] = useState(false);
 
   const saveAndStart = async () => {
-    const cat = localStorage.getItem('temp_cat') || "全範圍";
+    runTransaction(ref(db, 'stats/totalSessions'), (c) => (c || 0) + 1);
     await update(ref(db, `rooms/${roomId}`), {
-      state: 'LOBBY', totalRounds: rounds, timePerRound: time, allowDuplicate: dup, category: cat
+      state: 'LOBBY', totalRounds: rounds, timePerRound: time, allowDuplicate: dup
     });
     setView('PROJECTOR_GAME');
   };
@@ -228,9 +208,27 @@ function ProjectorSettings({ roomId, setView }) {
       <h1 style={{color: COLORS.red, fontSize:'4.5rem', margin:0}}>{roomId}</h1>
       <p>學生手機輸入代碼加入</p>
       <div style={{margin:'30px 0', borderTop:'1px solid #eee', paddingTop:'20px'}}>
-        <div style={settingRow}><span>總回合數</span><input type="number" style={inputStyle} value={rounds} onChange={e=>setRounds(parseInt(e.target.value)||0)} onFocus={e=>e.target.select()} /></div>
-        <div style={settingRow}><span>每輪秒數</span><input type="number" style={inputStyle} value={time} onChange={e=>setTime(parseInt(e.target.value)||0)} onFocus={e=>e.target.select()} /></div>
-        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem'}}><input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複</label>
+        <div style={settingRow}>
+          <span>總回合數</span>
+          <input 
+            type="number" 
+            style={inputStyle} 
+            value={rounds} 
+            onChange={e => setRounds(parseInt(e.target.value) || 0)} 
+            onFocus={e => e.target.select()} 
+          />
+        </div>
+        <div style={settingRow}>
+          <span>每輪秒數</span>
+          <input 
+            type="number" 
+            style={inputStyle} 
+            value={time} 
+            onChange={e => setTime(parseInt(e.target.value) || 0)} 
+            onFocus={e => e.target.select()} 
+          />
+        </div>
+        <label style={{display:'block', margin:'20px 0', fontSize:'1.2rem', cursor: 'pointer'}}><input type="checkbox" checked={dup} onChange={e=>setDup(e.target.checked)} /> 允許題目重複出現</label>
       </div>
       <button style={startBtn} onClick={saveAndStart}>儲存設定並開始</button>
     </div></div>
@@ -249,62 +247,39 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
     return () => clearInterval(timer);
   }, [roomId, roomData?.state, roomData?.timeLeft, roomData?.isPaused]);
 
-  const startRound = async () => {
-    // 增加全局使用次數
-    runTransaction(ref(db, 'stats/totalSessions'), (c) => (c || 0) + 1);
+  if (!roomData) return <div style={lobbyContainer}><h2>📡 資料同步中...</h2></div>;
 
+  const startRound = async () => {
     const snapshot = await get(ref(db, 'question_pool'));
     const pool = Object.values(snapshot.val() || {});
     let filtered = roomData.category === '全範圍' ? pool : pool.filter(q => q.book === roomData.category);
-    
-    if (!roomData.allowDuplicate) {
-        filtered = filtered.filter(q => !(roomData.usedIds || []).includes(q.id));
-    }
-    
-    if (filtered.length === 0) return alert("該範圍題目已用完！");
+    if (!roomData.allowDuplicate) filtered = filtered.filter(q => !(roomData.usedIds || []).includes(q.id));
+    if (filtered.length === 0) return alert("題目已用完！");
     const shuffled = filtered.sort(() => Math.random() - 0.5);
-    
-    await update(ref(db, `rooms/${roomId}`), { 
-      state: 'PLAYING', 
-      queue: shuffled, 
-      currentIndex: 0, 
-      score: 0, 
-      history: [], 
-      timeLeft: roomData.timePerRound, 
-      isPaused: false 
-    });
+    await update(ref(db, `rooms/${roomId}`), { state: 'PLAYING', queue: shuffled, currentIndex: 0, score: 0, history: [], timeLeft: roomData.timePerRound, isPaused: false });
   };
 
   const confirmResult = async () => {
     const newScores = [...(roomData.roundScores || []), { round: roomData.currentRound, score: roomData.score }];
     const newUsedIds = [...(roomData.usedIds || []), ...(roomData.queue?.slice(0, roomData.currentIndex).map(q => q.id) || [])];
     const isGameOver = roomData.currentRound >= roomData.totalRounds;
-
-    await update(ref(db, `rooms/${roomId}`), { 
-      state: isGameOver ? 'TOTAL_END' : 'ROUND_END', 
-      roundScores: newScores, 
-      usedIds: newUsedIds, 
-      isPaused: false 
-    });
+    await update(ref(db, `rooms/${roomId}`), { state: isGameOver ? 'TOTAL_END' : 'ROUND_END', roundScores: newScores, usedIds: newUsedIds, isPaused: false });
   };
 
-  if (!roomData || roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
+  if (roomData.state === 'LOBBY' || roomData.state === 'ROUND_END' || roomData.state === 'TOTAL_END') {
     const total = (roomData?.roundScores || []).reduce((a, b) => a + b.score, 0);
     return (
       <div style={lobbyContainer}><div style={glassCard}>
           <h1>房間代碼：<span style={{color:COLORS.red}}>{roomId}</span></h1>
-          {roomData?.state === 'TOTAL_END' ? (
+          {roomData.state === 'TOTAL_END' ? (
             <div><h1 style={{color:COLORS.red}}>🏆 最終結算</h1>{roomData.roundScores?.map((r,i)=><div key={i}>第 {r.round} 輪：{r.score} 分</div>)}<h2 style={{fontSize:'48px', color:COLORS.green}}>總分：{total}</h2></div>
-          ) : <h2 style={{color:COLORS.green, fontSize:'50px'}}>準備就緒 (第 {roomData?.currentRound || 1} 輪)</h2>}
-          
+          ) : <h2 style={{color:COLORS.green, fontSize:'50px'}}>準備就緒 (第 {roomData.currentRound} 輪)</h2>}
           <button style={startBtn} onClick={async () => {
-              if (roomData?.state === 'TOTAL_END') return resetToHome();
-              if (roomData?.state === 'ROUND_END') {
-                  await update(ref(db, `rooms/${roomId}`), { currentRound: roomData.currentRound + 1 });
-              }
+              if (roomData.state === 'TOTAL_END') return resetToHome();
+              if (roomData.state === 'ROUND_END') { await update(ref(db, `rooms/${roomId}`), { currentRound: roomData.currentRound + 1 }); }
               startRound();
-          }}>{roomData?.state === 'TOTAL_END' ? "回首頁" : "開始挑戰"}</button>
-          {roomData?.state !== 'TOTAL_END' && <button style={backLink} onClick={resetToHome}>重置回首頁</button>}
+          }}>{roomData.state === 'TOTAL_END' ? "回首頁" : "開始挑戰"}</button>
+          {roomData.state !== 'TOTAL_END' && <button style={backLink} onClick={resetToHome}>重置回首頁</button>}
       </div><CopyrightFooter /></div>
     );
   }
@@ -312,18 +287,12 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
   const currentQ = roomData.queue?.[roomData.currentIndex];
   const isReview = roomData.state === 'REVIEW';
   const isTimeWarning = roomData.timeLeft <= 10;
-  
-  // 閃爍樣式
-  const timerIconStyle = { 
-    height: '30px', 
-    filter: iconFilterGold, 
-    animation: (isTimeWarning && !roomData.isPaused) ? 'ioh-blink-fast 0.5s infinite' : 'none' 
-  };
+  const timerIconStyle = { height: '30px', filter: iconFilterGold, animation: (isTimeWarning && !roomData.isPaused) ? 'ioh-blink-fast 0.5s infinite' : 'none' };
 
   return (
     <div style={gameScreenStyle}>
       <div style={topBar}>
-        <div style={infoText}>{roomData.category} | 房號: {roomId}</div>
+        <div style={infoText}>{roomData.category} | RD {roomData.currentRound} / {roomData.totalRounds} | 房號: {roomId}</div>
         <div style={{...infoText, color: isTimeWarning?'#fff':COLORS.gold, display:'flex', alignItems:'center', gap:'10px'}}>
           <img src="/time.png" alt="time" style={timerIconStyle} />
           <span>{roomData.timeLeft}s</span>
@@ -353,13 +322,12 @@ function ProjectorGameView({ roomId, roomData, resetToHome, totalSessions }) {
 }
 
 const updateHistory = (rid, data, idx) => {
-  if(!data.history) return;
   const newH = [...data.history];
   newH[idx].type = newH[idx].type === '正確' ? '跳過' : '正確';
   update(ref(db, `rooms/${rid}`), { history: newH, score: newH.filter(h=>h.type==='正確').length });
 };
 
-// --- 控制器端：遊戲畫面 ---
+// --- 控制器端 ---
 function PlayerView({ roomId, roomData, resetSystem }) {
   const submit = async (type) => {
     if (!roomData || roomData.state !== 'PLAYING' || roomData.isPaused) return;
@@ -368,18 +336,16 @@ function PlayerView({ roomId, roomData, resetSystem }) {
     const newH = [...(roomData.history || []), { q: currentQ.term, type: type }];
     await update(ref(db, `rooms/${roomId}`), { currentIndex: nextIdx, score: type === '正確' ? roomData.score + 1 : roomData.score, history: newH });
   };
-  if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中 (房號: {roomId})...</h2></div>;
+  if (!roomData) return <div style={layoutStyleMobile}><h2>📡 連線中...</h2></div>;
   if (roomData.state !== 'PLAYING') return (
-    <div style={layoutStyleMobile}><h2 style={{color:COLORS.red}}>⏳ 等待開始</h2><p>房號：{roomId}</p><p>投影幕端點擊「開始挑戰」</p><button style={backLink} onClick={resetSystem}>返回首頁</button></div>
+    <div style={layoutStyleMobile}><h2 style={{color:COLORS.red}}>⏳ 等待開始</h2><p>房號：{roomId}</p><p>請等待投影幕端啟動</p><button style={backLink} onClick={resetSystem}>返回首頁</button></div>
   );
   if (roomData.isPaused) return <div style={layoutStyleMobile}><h1 style={{color:COLORS.red, fontSize:'3rem'}}>暫停中</h1></div>;
   const currentQ = roomData.queue?.[roomData.currentIndex];
-  if (!currentQ) return <div style={layoutStyleMobile}><h2>🏁 本輪結束</h2></div>;
-
   return (
     <div style={layoutStyleMobile}>
-      <h2 style={mobileHeader}>房號: {roomId} | 第 {roomData.currentRound} 輪</h2>
-      <div style={mobileTermCard}><h2 style={mobileTermText}>{currentQ.term}</h2></div>
+      <h2 style={mobileHeader}>房號: {roomId} | 第 {roomData.currentRound} / {roomData.totalRounds} 輪</h2>
+      <div style={mobileTermCard}><h2 style={mobileTermText}>{currentQ?.term}</h2></div>
       <div style={mobileButtonArea}>
         <button style={{ ...mobileActionBtn, backgroundColor: COLORS.green }} onClick={() => submit('正確')}>正確</button>
         <button style={{ ...mobileActionBtn, backgroundColor: COLORS.red }} onClick={() => submit('跳過')}>跳過</button>
@@ -402,7 +368,7 @@ function AdminView({ onBack }) {
         const json = XLSX.utils.sheet_to_json(workbook.Sheets[n]);
         all = [...all, ...json.map(i => ({ id: i['序號']||Math.random(), term: String(i['名詞']||''), book: String(i['分冊']||'').trim() }))];
       });
-      set(ref(db, 'question_pool'), all).then(() => alert("題庫匯入成功！"));
+      set(ref(db, 'question_pool'), all).then(() => alert("匯入成功！"));
     };
     reader.readAsArrayBuffer(file);
   };
@@ -417,22 +383,22 @@ const responsiveTitle = { fontSize:'clamp(2.5rem, 10vw, 5rem)', fontWeight:'900'
 const subTitle = { fontSize:'2rem', marginBottom:'25px', color:COLORS.text, fontWeight:'bold' };
 const mobileGrid = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:'15px', marginBottom:'25px' };
 const mobileVerticalGrid = { display:'flex', flexDirection:'column', gap:'15px', marginBottom:'25px' };
-const roleBtnCard = { display:'flex', alignItems:'center', padding:'20px', fontSize:'1.4rem', borderRadius:'20px', border:`2px solid ${COLORS.gold}`, background:'#fff', cursor:'pointer', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY, boxShadow: '0 4px 10px rgba(0,0,0,0.05)' };
+const roleBtnCard = { display:'flex', alignItems:'center', padding:'20px', fontSize:'1.4rem', borderRadius:'20px', border:`2px solid ${COLORS.gold}`, background:'#fff', cursor:'pointer', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
 const iconLarge = { fontSize:'2.5rem', marginRight:'15px' };
 const roleBtnDisabled = { ...roleBtnCard, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
 const catBtnMobile = { padding:'15px', fontSize:'1.2rem', borderRadius:'15px', border:`2px solid ${COLORS.gold}`, background:'#fff', fontWeight:'bold', color:COLORS.text, fontFamily:FONT_FAMILY };
 const catBtnDisabled = { ...catBtnMobile, background:'#eee', color:'#aaa', cursor:'not-allowed', border:'none' };
-const startBtn = { padding:'20px', fontSize:'1.8rem', borderRadius: '20px', border:'none', background: COLORS.gold, fontWeight: 'bold', cursor: 'pointer', width: '100%', fontFamily: FONT_FAMILY };
+const startBtn = { padding:'20px', fontSize:'1.8rem', borderRadius:'20px', border:'none', background:COLORS.gold, color:COLORS.text, fontWeight:'bold', cursor:'pointer', width:'100%', fontFamily: FONT_FAMILY };
 const backLink = { background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '1.1rem', marginTop: '15px' };
 const adminEntryBtn = { position:'absolute', bottom:'30px', left:'30px', background: 'none', border: 'none', display: 'flex', alignItems: 'center', cursor: 'pointer' };
 const gameScreenStyle = { display:'flex', flexDirection:'column', height:'100vh', backgroundColor:COLORS.cream, overflow:'hidden' };
-const topBar = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 40px', background:COLORS.text, color:'#fff' };
+const topBar = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 40px', background:COLORS.text, color:'#fff' };
 const infoText = { fontSize:'26px', fontWeight:'bold' };
 const mainContent = { display:'flex', flex:1, overflow:'hidden' };
 const sideColumnPC = { width:'15%', padding:'20px', background:COLORS.red, display:'flex', flexDirection:'column', color:'#fff', boxSizing:'border-box' };
 const columnTitlePC = { fontSize:'28px', borderBottom:'3px solid rgba(255,255,255,0.3)', paddingBottom:'10px', textAlign:'center', fontWeight:'bold', marginBottom:'15px' };
-const listItemWhitePC = { fontSize:'28px', padding: '15px', margin:'10px 0', borderRadius:'10px', cursor:'pointer', backgroundColor:'rgba(255,255,255,0.15)', color:'#fff', textAlign:'left', fontWeight:'bold' };
-const centerColumnPC = { width:'70%', display:'flex', flexDirection:'column', alignItems: 'center', justifyContent: 'center', padding: '0 80px', boxSizing: 'border-box' };
+const listItemWhitePC = { fontSize:'28px', padding:'15px', margin:'10px 0', borderRadius:'10px', cursor:'pointer', backgroundColor:'rgba(255,255,255,0.15)', color:'#fff', textAlign:'left', fontWeight:'bold' };
+const centerColumnPC = { width:'70%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'0 80px', boxSizing:'border-box' };
 const mainTermContainer = { width:'100%', overflow:'hidden', textAlign:'center' };
 const mainTermStylePC = (t) => ({ fontSize: t.length > 12 ? '65px' : t.length > 8 ? '85px' : t.length > 5 ? '120px' : '170px', whiteSpace:'nowrap', fontWeight:'900', color:COLORS.text, margin:0 });
 const layoutStyleMobile = { display:'flex', flexDirection:'column', height:'100vh', width:'100vw', background:COLORS.cream, padding:'0 20px', boxSizing:'border-box', textAlign:'center', justifyContent:'flex-start' };
@@ -443,10 +409,10 @@ const mobileButtonArea = { display:'flex', flexDirection:'column', gap:'15px', m
 const mobileActionBtn = { padding:'25px 0', fontSize:'2.5rem', borderRadius:'20px', border:'none', color:'#fff', fontWeight:'bold', cursor:'pointer', boxShadow:'0 5px 15px rgba(0,0,0,0.1)' };
 const volumeBtnStyle = { position:'fixed', bottom:'15px', right:'15px', width: '55px', height: '55px', background:'white', border:`2px solid ${COLORS.gold}`, borderRadius:'50%', cursor:'pointer', padding:'10px', zIndex:2000, boxShadow:'0 4px 10px rgba(0,0,0,0.1)' };
 const pauseIconBtn = { background:'none', border:'none', cursor:'pointer' };
-const resetSmallBtn = { padding:'5px 10px', background:'transparent', border:'1px solid #555', color:'#aaa', borderRadius: '4px', cursor: 'pointer' };
-const confirmBtn = { padding:'10px 20px', background:COLORS.gold, border:'none', borderRadius:'8px', color:COLORS.text, fontWeight:'bold', cursor: 'pointer' };
-const inputStyle = { padding:'12px', borderRadius:'10px', border:`2px solid ${COLORS.gold}`, width:'150px', textAlign:'center', fontSize:'1.8rem', backgroundColor:'#fff', color:COLORS.text };
-const settingRow = { display:'flex', justifyContent:'space-between', alignItems:'center', margin:'20px 0', width:'100%', fontSize:'1.3rem', fontWeight:'bold' };
-const listScroll = { flex:1, overflowY:'auto' };
-const footerStyle = { position:'absolute', bottom:'30px', width:'100%', textAlign:'center', fontSize:'12px', color:COLORS.text, opacity:0.5, pointerEvents:'none' };
-const userCounterStyle = { textAlign:'right', borderLeft:'1px solid rgba(255,255,255,0.2)', paddingLeft:'15px' };
+const resetSmallBtn = { padding:'5px 10px', background:'transparent', border: '1px solid #555', color:'#aaa', borderRadius: '4px', cursor: 'pointer' };
+const confirmBtn = { padding:'10px 20px', background:COLORS.gold, border: 'none', borderRadius: '8px', color:COLORS.text, fontWeight: 'bold', cursor: 'pointer' };
+const inputStyle = { padding: '12px', borderRadius: '10px', border: `2px solid ${COLORS.gold}`, width: '150px', textAlign: 'center', fontSize: '1.8rem', backgroundColor: '#fff', color: COLORS.text };
+const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0', width: '100%', fontSize: '1.3rem', fontWeight: 'bold' };
+const listScroll = { flex: 1, overflowY: 'auto' };
+const footerStyle = { position: 'absolute', bottom: '30px', width: '100%', textAlign: 'center', fontSize: '12px', color: COLORS.text, opacity: 0.5, pointerEvents: 'none' };
+const userCounterStyle = { textAlign: 'right', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px' };
